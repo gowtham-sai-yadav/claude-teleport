@@ -43,10 +43,11 @@ func printHelp() {
 	fmt.Print("claude-port " + Version + " — move your Claude Code history between machines\n\n" +
 		"USAGE:\n" +
 		"  claude-port export  [--out FILE] [--config-dir DIR]\n" +
-		"  claude-port import  <bundle> [--dry-run] [--map OLD=NEW]... [--overwrite] [--deep] [--yes]\n" +
+		"  claude-port import  <bundle> [--dry-run] [--map OLD=NEW]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
 		"  claude-port inspect <bundle>\n\n" +
 		"EXPORT runs on the OLD machine and writes a portable bundle.\n" +
-		"IMPORT runs on the NEW machine and restores it, fixing paths for this OS.\n" +
+		"IMPORT runs on the NEW machine and restores it, translating paths for this OS\n" +
+		"(Linux, macOS, or Windows — drive letters and backslashes handled).\n" +
 		"Your login is never copied — log in once after importing.\n")
 }
 
@@ -84,6 +85,7 @@ func runImport(args []string) error {
 	deep := fs.Bool("deep", false, "rewrite old paths everywhere in transcripts, not just cwd")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt")
 	home := fs.String("target-home", "", "override the target home directory")
+	tos := fs.String("target-os", "", "render paths for this OS: linux|darwin|windows (default: this machine)")
 	cfg := fs.String("config-dir", "", "override the target Claude config dir")
 	var maps multiFlag
 	fs.Var(&maps, "map", "remap OLD=NEW path prefix (repeatable)")
@@ -101,6 +103,7 @@ func runImport(args []string) error {
 	return importer.Run(importer.Options{
 		Bundle:     pos[0],
 		TargetHome: *home,
+		TargetOS:   *tos,
 		ConfigDir:  *cfg,
 		DryRun:     *dry,
 		Overwrite:  *overwrite,
