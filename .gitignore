@@ -1,0 +1,10 @@
+# build output
+/claude-port
+/dist/
+
+# bundles produced by the tool
+*.tgz
+claude-port-backup-*
+
+# OS cruft
+.DS_Store
