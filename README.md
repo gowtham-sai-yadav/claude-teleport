@@ -77,9 +77,20 @@ claude-port import bundle.tgz --yes
 | `--dry-run` | show the plan, write nothing |
 | `--map OLD=NEW` | remap a path prefix (repeatable); most specific match wins |
 | `--target-home DIR` | override the detected home directory |
+| `--target-os OS` | render paths for `linux`/`darwin`/`windows` (default: this machine) |
 | `--overwrite` | replace existing files (backs each one up first) |
 | `--deep` | rewrite old paths *everywhere* in transcripts, not just the `cwd` field |
 | `--yes` | skip the confirmation prompt |
+
+### Moving between different operating systems
+
+Import normally runs **on the target machine**, so it detects the right OS automatically and
+translates everything — including Windows drive letters and backslashes — for you. A Windows
+project like `C:\Users\bob\proj` becomes the Linux folder `-home-kali-proj` (and vice versa),
+and paths stored *inside* the transcripts are rewritten in the correct style. Because
+transcripts are JSON, Windows paths are matched and re-emitted in their escaped form
+(`C:\\Users\\bob`), so nothing is missed. Use `--target-os` only to prepare a bundle for a
+different OS than the one you're running on (mainly for testing).
 
 ## What it does and doesn't move
 
@@ -105,7 +116,9 @@ identity fields — all of which rebuild themselves on first run.
 ## Roadmap
 
 - [x] Milestone 1 — same-OS / new-username export & import (this MVP)
-- [ ] Milestone 2 — full cross-OS moves (Windows drive letters, real-machine testing every direction)
+- [x] Milestone 2 — cross-OS moves: Windows drive letters & backslashes, JSON-escaped path
+  rewriting, automated round-trip tests in both directions (validation on real Windows/macOS
+  hardware still welcome)
 - [ ] Milestone 3 — one-button GUI wrapper, a post-import "verify" step, per-project selection
 
 ## License
