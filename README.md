@@ -2,7 +2,7 @@
 
 # claude-teleport
 
-**Move your [Claude Code](https://claude.com/claude-code) history to a new computer — sessions, memory, and settings — with every path fixed automatically.**
+**Move your [Claude Code](https://claude.com/claude-code) history to a new computer - sessions, memory, and settings - with every path fixed automatically.**
 
 Linux · macOS · Windows, in any direction.
 
@@ -17,13 +17,13 @@ Linux · macOS · Windows, in any direction.
 
 Claude Code keeps your chat history, memory, and settings in local files on your machine.
 Switch laptops and they get left behind. **claude-teleport** packs them into one portable
-file on the old computer and unpacks them on the new one — renaming folders and rewriting the
+file on the old computer and unpacks them on the new one - renaming folders and rewriting the
 old paths so your past conversations resume exactly where they should.
 
 ```
-┌─────────────┐    export     ┌──────────────┐    import (paths fixed)    ┌─────────────┐
-│ OLD machine │ ────────────▶ │ one .tgz file │ ─────────────────────────▶ │ NEW machine │
-└─────────────┘               └──────────────┘                            └─────────────┘
+┌─────────────┐    export     ┌───────────────┐   import (paths fixed)   ┌─────────────┐
+│ OLD machine │ ────────────▶ │ one .tgz file │ ───────────────────────▶ │ NEW machine │
+└─────────────┘               └───────────────┘                          └─────────────┘
 ```
 
 ## Contents
@@ -45,8 +45,8 @@ old paths so your past conversations resume exactly where they should.
 Copying the `~/.claude` folder by hand **does not work**, for two reasons:
 
 1. Sessions live in folders named after each project's full path, with the slashes turned into
-   dashes (`/home/you/app` → `-home-you-app`). That naming is *lossy* — slashes, dots,
-   underscores and spaces all become `-` — so you can't reconstruct the real path, and the
+   dashes (`/home/you/app` → `-home-you-app`). That naming is *lossy* - slashes, dots,
+   underscores and spaces all become `-` - so you can't reconstruct the real path, and the
    name is wrong on a machine with a different username or OS anyway.
 2. The session files have the **old machine's paths written inside them**.
 
@@ -57,7 +57,7 @@ names and rewrites the in-file paths for the new machine.
 
 Pick whichever you like.
 
-### Option A — Download a ready-made binary (no tools needed)
+### Option A - Download a ready-made binary (no tools needed)
 
 1. Go to the [**latest release**](https://github.com/gowtham-sai-yadav/claude-teleport/releases/latest).
 2. Download the file for your computer:
@@ -74,13 +74,13 @@ Pick whichever you like.
    ```
    On Windows, rename it to `claude-teleport.exe` and keep it in a folder you can find.
 
-### Option B — With Go installed
+### Option B - With Go installed
 
 ```bash
 go install github.com/gowtham-sai-yadav/claude-teleport@latest
 ```
 
-### Option C — From source
+### Option C - From source
 
 ```bash
 git clone https://github.com/gowtham-sai-yadav/claude-teleport
@@ -92,7 +92,7 @@ Check it works: `claude-teleport version`
 
 ## Quick start (5 minutes)
 
-You'll run two commands total — one on each computer.
+You'll run two commands total - one on each computer.
 
 ### On the OLD computer
 
@@ -102,13 +102,13 @@ You'll run two commands total — one on each computer.
    ```
 2. It prints the name of a file it created, e.g.
    `claude-teleport-backup-20260628-120000.tgz`.
-3. Copy that one file to the new computer — AirDrop, a USB stick, `scp`, Google Drive,
+3. Copy that one file to the new computer - AirDrop, a USB stick, `scp`, Google Drive,
    whatever is easiest.
 
 ### On the NEW computer
 
 4. **Install Claude Code and sign in once** (so it sets up your account), then close it.
-5. Preview what will happen — this writes nothing:
+5. Preview what will happen - this writes nothing:
    ```bash
    claude-teleport import claude-teleport-backup-20260628-120000.tgz --dry-run
    ```
@@ -132,7 +132,7 @@ You'll run two commands total — one on each computer.
 
 That's it. Your old conversations are there.
 
-> **One thing that does not transfer: your login.** That's on purpose — credentials are locked
+> **One thing that does not transfer: your login.** That's on purpose - credentials are locked
 > to each machine and should never travel in a file. Just sign in to Claude Code once on the
 > new computer.
 
@@ -146,7 +146,7 @@ claude-teleport gui
 
 Your browser opens a small wizard where you pick the bundle file, confirm where each project
 should go, tick the projects you want, and click **Import**. It shows a live result and the
-same resume-ready check at the end. Everything runs locally on your own machine — nothing is
+same resume-ready check at the end. Everything runs locally on your own machine - nothing is
 uploaded anywhere.
 
 ## Moving between different operating systems
@@ -195,18 +195,18 @@ claude-teleport gui     [bundle] [--port N]
 `settings.json`, prompt history, plan files, plugin manifests, and the portable parts of
 `~/.claude.json` (re-keyed to the new paths).
 
-**Never moved — your login.** Credentials are machine-locked (macOS Keychain, Windows user
+**Never moved - your login.** Credentials are machine-locked (macOS Keychain, Windows user
 profile) and are deliberately left out. Sign in once after importing.
 
 **Skipped as junk:** caches, telemetry, shell snapshots, lock files, and device-identity
-fields — all of which rebuild themselves on first run.
+fields - all of which rebuild themselves on first run.
 
 ## Is it safe?
 
-- It **never overwrites** an existing file by default — it merges and tells you what it
+- It **never overwrites** an existing file by default - it merges and tells you what it
   skipped. `--overwrite` makes a timestamped backup of each file it replaces.
 - `--dry-run` shows exactly what will happen before anything is written.
-- The riskiest step — rewriting paths inside message text — is **off by default**. The safe
+- The riskiest step - rewriting paths inside message text - is **off by default**. The safe
   default only fixes the structural `cwd` field needed to resume. `--deep` opts into a full
   rewrite.
 - It runs entirely offline. Your bundle and history never leave your computers.
@@ -214,7 +214,7 @@ fields — all of which rebuild themselves on first run.
 ## How it works
 
 A bundle is a `.tgz` archive with a `manifest.json` written first. The manifest records each
-project's **true absolute path** — the piece the lossy folder name throws away — read from
+project's **true absolute path** - the piece the lossy folder name throws away - read from
 `~/.claude.json` and from the `cwd` stored inside each transcript. On import, claude-teleport:
 
 1. works out a new path for each project (auto-detected, or via `--map`),
@@ -227,10 +227,10 @@ project's **true absolute path** — the piece the lossy folder name throws away
 
 **Will this delete anything on my old machine?** No. `export` only reads.
 
-**Do I need Claude Code installed first on the new machine?** Yes — install it and sign in
+**Do I need Claude Code installed first on the new machine?** Yes - install it and sign in
 once so your account is set up, then import.
 
-**My new username/OS is different.** That's the whole point — it's handled. Preview with
+**My new username/OS is different.** That's the whole point - it's handled. Preview with
 `--dry-run` and adjust with `--map` if a guess is off.
 
 **I only want a couple of projects.** Use `--project <path-or-folder>` (repeatable), or tick

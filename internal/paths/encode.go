@@ -17,7 +17,7 @@ func NormSep(p string) string {
 // Every separator, dot, underscore and space collapses to a single dash, and
 // a Windows drive colon is dropped ("C:\Users\bob" -> "-C-Users-bob").
 //
-// NOTE: this transform is lossy — '/', '\\', '.', '_' and ' ' all map to '-',
+// NOTE: this transform is lossy - '/', '\\', '.', '_' and ' ' all map to '-',
 // so the original path can never be recovered from the folder name. That is
 // exactly why the manifest stores the true path alongside it.
 func Encode(absPath string) string {

@@ -46,7 +46,7 @@ func Run(args []string) error {
 }
 
 func printHelp() {
-	fmt.Print("claude-teleport " + Version + " — move your Claude Code history between machines\n\n" +
+	fmt.Print("claude-teleport " + Version + " - move your Claude Code history between machines\n\n" +
 		"USAGE:\n" +
 		"  claude-teleport export  [--out FILE] [--config-dir DIR]\n" +
 		"  claude-teleport import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
@@ -55,9 +55,9 @@ func printHelp() {
 		"  claude-teleport gui     [bundle] [--port N]\n\n" +
 		"EXPORT runs on the OLD machine and writes a portable bundle.\n" +
 		"IMPORT runs on the NEW machine and restores it, translating paths for this OS\n" +
-		"(Linux, macOS, or Windows — drive letters and backslashes handled).\n" +
+		"(Linux, macOS, or Windows - drive letters and backslashes handled).\n" +
 		"GUI opens a point-and-click wizard in your browser. VERIFY checks that migrated\n" +
-		"sessions are resume-ready. Your login is never copied — log in once after importing.\n")
+		"sessions are resume-ready. Your login is never copied - log in once after importing.\n")
 }
 
 func runExport(args []string) error {
@@ -208,7 +208,7 @@ func runInspect(args []string) error {
 		return err
 	}
 	if len(mb) == 0 {
-		return fmt.Errorf("no manifest.json found — is %q a claude-teleport bundle?", args[0])
+		return fmt.Errorf("no manifest.json found - is %q a claude-teleport bundle?", args[0])
 	}
 	var man manifest.Manifest
 	if err := json.Unmarshal(mb, &man); err != nil {

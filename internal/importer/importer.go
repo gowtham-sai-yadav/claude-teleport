@@ -91,7 +91,7 @@ func LoadManifest(bundlePath string) (manifest.Manifest, error) {
 		return manifest.Manifest{}, fmt.Errorf("read manifest: %w", err)
 	}
 	if len(mb) == 0 {
-		return manifest.Manifest{}, fmt.Errorf("no manifest.json found — is %q a claude-teleport bundle?", bundlePath)
+		return manifest.Manifest{}, fmt.Errorf("no manifest.json found - is %q a claude-teleport bundle?", bundlePath)
 	}
 	var man manifest.Manifest
 	if err := json.Unmarshal(mb, &man); err != nil {
@@ -322,7 +322,7 @@ func Run(opts Options) error {
 	}
 
 	if opts.DryRun {
-		fmt.Println("\nDry run — nothing was written.")
+		fmt.Println("\nDry run - nothing was written.")
 		return nil
 	}
 	if !opts.AssumeYes && !confirm("Proceed with import?") {
@@ -337,7 +337,7 @@ func Run(opts Options) error {
 	fmt.Printf("\nDone. %d file(s) written, %d skipped (already present); %d project entr%s merged into .claude.json.\n",
 		res.Written, res.Skipped, res.MergedProjects, plural(res.MergedProjects))
 	printVerify(res.Verify)
-	fmt.Println("\nIMPORTANT: your login was NOT transferred — credentials never are.")
+	fmt.Println("\nIMPORTANT: your login was NOT transferred - credentials never are.")
 	fmt.Println("Open Claude Code, log in once, then run `claude --resume` inside a project.")
 	return nil
 }
@@ -392,7 +392,7 @@ func printVerify(vs []VerifyResult) {
 	fmt.Printf("\nVerify: %d/%d migrated project(s) look resume-ready.\n", ok, len(vs))
 	for _, v := range vs {
 		if !v.OK {
-			fmt.Printf("  ! %s — %s\n", v.Folder, v.Detail)
+			fmt.Printf("  ! %s - %s\n", v.Folder, v.Detail)
 		}
 	}
 }
