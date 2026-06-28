@@ -7,7 +7,6 @@ package importer
 import (
 	"archive/tar"
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +27,7 @@ import (
 type Options struct {
 	Bundle     string
 	TargetHome string
+	TargetOS   string // rendering style for rewritten paths; defaults to runtime.GOOS
 	ConfigDir  string
 	DryRun     bool
 	Overwrite  bool
@@ -65,7 +65,10 @@ func Run(opts Options) error {
 	if targetHome == "" {
 		targetHome = tp.Home
 	}
-	targetOS := runtime.GOOS
+	targetOS := opts.TargetOS
+	if targetOS == "" {
+		targetOS = runtime.GOOS
+	}
 
 	mappings := buildMappings(man, targetHome, opts.Maps)
 
@@ -115,12 +118,18 @@ func buildMappings(man manifest.Manifest, targetHome string, explicit []paths.Ma
 		if old == "" || nw == "" {
 			return
 		}
-		if _, ok := byOld[old]; !ok {
-			order = append(order, old)
-		} else {
+		// Normalise the key to forward slashes (and drop a trailing separator)
+		// so a Windows source home "C:\Users\bob" and a derived root
+		// "C:/Users/bob" collapse to one rule instead of two.
+		key := strings.TrimRight(paths.NormSep(old), "/")
+		if key == "" {
+			return
+		}
+		if _, ok := byOld[key]; ok {
 			return // first writer wins (explicit rules are added first)
 		}
-		byOld[old] = nw
+		byOld[key] = nw
+		order = append(order, key)
 	}
 	for _, m := range explicit {
 		add(m.Old, m.New)
@@ -285,23 +294,13 @@ func (j *job) writeTranscript(dest string, r io.Reader, oldPath, newPath string)
 	defer f.Close()
 	bw := bufio.NewWriter(f)
 
-	cwdOldCompact := []byte(`"cwd":"` + oldPath + `"`)
-	cwdNewCompact := []byte(`"cwd":"` + newPath + `"`)
-	cwdOldSpaced := []byte(`"cwd": "` + oldPath + `"`)
-	cwdNewSpaced := []byte(`"cwd": "` + newPath + `"`)
-	oldBytes := []byte(oldPath)
-	newBytes := []byte(newPath)
+	rw := newPathRewriter(oldPath, newPath, j.opts.Deep)
 
 	br := bufio.NewReader(r)
 	for {
 		line, rerr := br.ReadBytes('\n')
 		if len(line) > 0 {
-			line = bytes.ReplaceAll(line, cwdOldCompact, cwdNewCompact)
-			line = bytes.ReplaceAll(line, cwdOldSpaced, cwdNewSpaced)
-			if j.opts.Deep {
-				line = bytes.ReplaceAll(line, oldBytes, newBytes)
-			}
-			if _, err := bw.Write(line); err != nil {
+			if _, err := bw.Write(rw.line(line)); err != nil {
 				return err
 			}
 		}
