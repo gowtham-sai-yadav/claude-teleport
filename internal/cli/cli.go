@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"strings"
 
-	"claude-port/internal/bundle"
-	"claude-port/internal/exporter"
-	"claude-port/internal/importer"
-	"claude-port/internal/manifest"
-	"claude-port/internal/paths"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/importer"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/webui"
 )
 
 const Version = "0.1.0"
@@ -28,27 +30,34 @@ func Run(args []string) error {
 		return runImport(args[1:])
 	case "inspect":
 		return runInspect(args[1:])
+	case "verify":
+		return runVerify(args[1:])
+	case "gui":
+		return runGUI(args[1:])
 	case "version", "-v", "--version":
-		fmt.Println("claude-port", Version)
+		fmt.Println("claude-teleport", Version)
 		return nil
 	case "help", "-h", "--help":
 		printHelp()
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (try: export, import, inspect)", args[0])
+		return fmt.Errorf("unknown command %q (try: export, import, inspect, verify, gui)", args[0])
 	}
 }
 
 func printHelp() {
-	fmt.Print("claude-port " + Version + " — move your Claude Code history between machines\n\n" +
+	fmt.Print("claude-teleport " + Version + " — move your Claude Code history between machines\n\n" +
 		"USAGE:\n" +
-		"  claude-port export  [--out FILE] [--config-dir DIR]\n" +
-		"  claude-port import  <bundle> [--dry-run] [--map OLD=NEW]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
-		"  claude-port inspect <bundle>\n\n" +
+		"  claude-teleport export  [--out FILE] [--config-dir DIR]\n" +
+		"  claude-teleport import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
+		"  claude-teleport inspect <bundle>\n" +
+		"  claude-teleport verify  [--config-dir DIR]\n" +
+		"  claude-teleport gui     [bundle] [--port N]\n\n" +
 		"EXPORT runs on the OLD machine and writes a portable bundle.\n" +
 		"IMPORT runs on the NEW machine and restores it, translating paths for this OS\n" +
 		"(Linux, macOS, or Windows — drive letters and backslashes handled).\n" +
-		"Your login is never copied — log in once after importing.\n")
+		"GUI opens a point-and-click wizard in your browser. VERIFY checks that migrated\n" +
+		"sessions are resume-ready. Your login is never copied — log in once after importing.\n")
 }
 
 func runExport(args []string) error {
@@ -89,12 +98,14 @@ func runImport(args []string) error {
 	cfg := fs.String("config-dir", "", "override the target Claude config dir")
 	var maps multiFlag
 	fs.Var(&maps, "map", "remap OLD=NEW path prefix (repeatable)")
+	var projects multiFlag
+	fs.Var(&projects, "project", "import only this project, by path or folder (repeatable; default: all)")
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) < 1 {
-		return fmt.Errorf("usage: claude-port import <bundle> [flags]")
+		return fmt.Errorf("usage: claude-teleport import <bundle> [flags]")
 	}
 	parsed, err := parseMaps(maps)
 	if err != nil {
@@ -110,7 +121,51 @@ func runImport(args []string) error {
 		Deep:       *deep,
 		AssumeYes:  *yes,
 		Maps:       parsed,
+		Projects:   projects,
 	})
+}
+
+func runVerify(args []string) error {
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	cfg := fs.String("config-dir", "", "override the Claude config dir")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	tp, err := claudedir.Locate(*cfg)
+	if err != nil {
+		return err
+	}
+	results := importer.VerifyDir(tp)
+	if len(results) == 0 {
+		fmt.Println("No projects found under", tp.ProjectsDir)
+		return nil
+	}
+	ok := 0
+	for _, v := range results {
+		status := "ok"
+		if !v.OK {
+			status = "FAIL: " + v.Detail
+		} else {
+			ok++
+		}
+		fmt.Printf("  [%s] %s  (%d session(s))\n", status, v.Folder, v.Sessions)
+	}
+	fmt.Printf("\n%d/%d project(s) resume-ready.\n", ok, len(results))
+	return nil
+}
+
+func runGUI(args []string) error {
+	fs := flag.NewFlagSet("gui", flag.ContinueOnError)
+	port := fs.Int("port", 0, "port to listen on (0 = pick a free one)")
+	pos, err := parseInterleaved(fs, args)
+	if err != nil {
+		return err
+	}
+	bundlePath := ""
+	if len(pos) > 0 {
+		bundlePath = pos[0]
+	}
+	return webui.Serve(*port, bundlePath)
 }
 
 // parseInterleaved lets flags and positional arguments appear in any order.
@@ -146,14 +201,14 @@ func parseMaps(in []string) ([]paths.Mapping, error) {
 
 func runInspect(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: claude-port inspect <bundle>")
+		return fmt.Errorf("usage: claude-teleport inspect <bundle>")
 	}
 	mb, err := bundle.ReadManifest(args[0])
 	if err != nil {
 		return err
 	}
 	if len(mb) == 0 {
-		return fmt.Errorf("no manifest.json found — is %q a claude-port bundle?", args[0])
+		return fmt.Errorf("no manifest.json found — is %q a claude-teleport bundle?", args[0])
 	}
 	var man manifest.Manifest
 	if err := json.Unmarshal(mb, &man); err != nil {
