@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude-teleport</title>
+<style>
+  :root { --bg:#0f1117; --card:#181b24; --line:#2a2f3a; --fg:#e6e8ee; --muted:#9aa3b2;
+          --accent:#6ea8fe; --ok:#4ade80; --bad:#f87171; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  header { padding:28px 24px 10px; }
+  h1 { margin:0; font-size:22px; } h1 span { color:var(--accent); }
+  .sub { color:var(--muted); margin-top:4px; }
+  main { max-width:920px; margin:0 auto; padding:16px 24px 60px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:20px; margin:16px 0; }
+  .card h2 { margin:0 0 14px; font-size:16px; }
+  label { display:block; margin:12px 0 4px; color:var(--muted); font-size:13px; }
+  input[type=text], select, textarea { width:100%; padding:9px 11px; background:#0d0f15;
+    color:var(--fg); border:1px solid var(--line); border-radius:8px; font:inherit; }
+  textarea { min-height:64px; resize:vertical; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; } .row > div { flex:1; min-width:220px; }
+  .checks { display:flex; gap:20px; margin-top:14px; flex-wrap:wrap; }
+  .checks label { display:flex; align-items:center; gap:7px; margin:0; color:var(--fg); }
+  button { background:var(--accent); color:#0b0e14; border:0; border-radius:8px;
+    padding:10px 18px; font:inherit; font-weight:600; cursor:pointer; margin-top:16px; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); }
+  button:disabled { opacity:.5; cursor:default; }
+  table { width:100%; border-collapse:collapse; margin-top:6px; font-size:13px; }
+  th,td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:340px; }
+  th { color:var(--muted); font-weight:500; }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .hidden { display:none; }
+  .note { color:var(--muted); font-size:13px; margin-top:10px; }
+  .err { color:var(--bad); margin-top:12px; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; }
+  .pill.ok { background:rgba(74,222,128,.15); color:var(--ok); }
+  .pill.bad { background:rgba(248,113,113,.15); color:var(--bad); }
+  .map-row { display:flex; gap:10px; align-items:center; }
+  .map-row .arrow { color:var(--muted); }
+  .banner { background:rgba(110,168,254,.12); border:1px solid rgba(110,168,254,.3);
+    border-radius:8px; padding:12px 14px; color:var(--fg); }
+</style>
+</head>
+<body>
+<header>
+  <h1>claude<span>-teleport</span></h1>
+  <div class="sub">Bring your Claude Code history onto this machine.</div>
+</header>
+<main>
+
+  <div class="card" id="step1">
+    <h2>1 · Choose a bundle and where it should land</h2>
+    <label>Bundle file (the <span class="mono">.tgz</span> you exported on the old machine)</label>
+    <input type="text" id="bundle" placeholder="/path/to/claude-teleport-backup-....tgz">
+    <div class="row">
+      <div>
+        <label>New home directory on this machine</label>
+        <input type="text" id="home" placeholder="/Users/you">
+      </div>
+      <div>
+        <label>This machine's OS</label>
+        <select id="os">
+          <option value="linux">Linux</option>
+          <option value="darwin">macOS</option>
+          <option value="windows">Windows</option>
+        </select>
+      </div>
+    </div>
+    <label>Extra path rules (optional, one per line: <span class="mono">OLD=NEW</span>)</label>
+    <textarea id="maps" placeholder="/old/path=/new/path"></textarea>
+    <button id="previewBtn">Preview &rarr;</button>
+    <div class="err hidden" id="step1err"></div>
+  </div>
+
+  <div class="card hidden" id="step2">
+    <h2>2 · Review and pick what to bring</h2>
+    <div id="summary" class="note"></div>
+    <div id="mappings" class="note mono"></div>
+    <div class="checks">
+      <label><input type="checkbox" id="selall" checked> Select all</label>
+      <label><input type="checkbox" id="deep"> Deep rewrite (replace old paths everywhere, not just cwd)</label>
+      <label><input type="checkbox" id="overwrite"> Overwrite files that already exist</label>
+    </div>
+    <div style="overflow:auto; max-height:340px; margin-top:12px;">
+      <table id="ptable">
+        <thead><tr><th></th><th>From</th><th>To</th><th>Sessions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <button id="importBtn">Import selected</button>
+    <button class="ghost" id="backBtn">Back</button>
+    <div class="err hidden" id="step2err"></div>
+  </div>
+
+  <div class="card hidden" id="step3">
+    <h2>3 · Done</h2>
+    <div id="result"></div>
+    <div class="banner" style="margin-top:14px;">
+      Your login was <b>not</b> copied — credentials never are. Open Claude Code, log in once,
+      then run <span class="mono">claude --resume</span> inside a project.
+    </div>
+  </div>
+
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let plan = null;
+
+async function loadEnv() {
+  try {
+    const e = await (await fetch('/api/env')).json();
+    if (e.bundle) $('bundle').value = e.bundle;
+    if (e.home) $('home').value = e.home;
+    if (e.os) $('os').value = e.os;
+  } catch (_) {}
+}
+
+function parseMaps() {
+  return $('maps').value.split('\n').map(s => s.trim()).filter(Boolean)
+    .map(l => { const i = l.indexOf('='); return i < 0 ? null : {old: l.slice(0,i), new: l.slice(i+1)}; })
+    .filter(Boolean);
+}
+
+function body() {
+  return { bundle: $('bundle').value.trim(), targetHome: $('home').value.trim(),
+           targetOS: $('os').value, maps: parseMaps() };
+}
+
+async function preview() {
+  $('step1err').classList.add('hidden');
+  const r = await fetch('/api/plan', {method:'POST', body: JSON.stringify(body())});
+  const data = await r.json();
+  if (!r.ok) { $('step1err').textContent = data.error || 'failed'; $('step1err').classList.remove('hidden'); return; }
+  plan = data;
+  renderPlan();
+  $('step2').classList.remove('hidden');
+  $('step3').classList.add('hidden');
+  $('step2').scrollIntoView({behavior:'smooth'});
+}
+
+function renderPlan() {
+  $('summary').innerHTML =
+    `Bundle from <b>${plan.sourceOS}</b> (home <span class="mono">${plan.sourceHome}</span>) → `
+    + `this machine <b>${plan.targetOS}</b> (home <span class="mono">${plan.targetHome}</span>). `
+    + `${plan.items.length} project(s).`;
+  $('mappings').innerHTML = (plan.mappings||[]).map(m => `${m.old} → ${m.new}`).join('<br>');
+  const tb = $('ptable').querySelector('tbody');
+  tb.innerHTML = '';
+  plan.items.forEach((it, i) => {
+    const tr = document.createElement('tr');
+    const from = it.oldPath || '(unknown) ' + it.oldEnc;
+    const to = it.newPath || '(kept as-is)';
+    tr.innerHTML = `<td><input type="checkbox" class="psel" data-enc="${it.oldEnc}" ${it.selected?'checked':''}></td>`
+      + `<td class="mono" title="${from}">${from}</td>`
+      + `<td class="mono" title="${to}">${to}</td><td>${it.sessions}</td>`;
+    tb.appendChild(tr);
+  });
+}
+
+function selectedEncs() {
+  return [...document.querySelectorAll('.psel')].filter(c => c.checked).map(c => c.dataset.enc);
+}
+
+async function doImport() {
+  $('step2err').classList.add('hidden');
+  const sel = selectedEncs();
+  if (!sel.length) { $('step2err').textContent = 'Pick at least one project.'; $('step2err').classList.remove('hidden'); return; }
+  $('importBtn').disabled = true; $('importBtn').textContent = 'Importing…';
+  const req = Object.assign(body(), { projects: sel, deep: $('deep').checked, overwrite: $('overwrite').checked });
+  const r = await fetch('/api/import', {method:'POST', body: JSON.stringify(req)});
+  const data = await r.json();
+  $('importBtn').disabled = false; $('importBtn').textContent = 'Import selected';
+  if (!r.ok) { $('step2err').textContent = data.error || 'failed'; $('step2err').classList.remove('hidden'); return; }
+  renderResult(data);
+  $('step3').classList.remove('hidden');
+  $('step3').scrollIntoView({behavior:'smooth'});
+}
+
+function renderResult(res) {
+  const v = res.verify || [];
+  const ok = v.filter(x => x.ok).length;
+  let html = `<p>Wrote <b>${res.written}</b> file(s), skipped <b>${res.skipped}</b> already present, `
+    + `merged <b>${res.mergedProjects}</b> project entr${res.mergedProjects===1?'y':'ies'} into config.</p>`;
+  html += `<p>Verify: <span class="pill ${ok===v.length?'ok':'bad'}">${ok}/${v.length} resume-ready</span></p>`;
+  html += '<table><thead><tr><th></th><th>Project folder</th><th>Sessions</th><th>Note</th></tr></thead><tbody>';
+  v.forEach(x => {
+    html += `<tr><td><span class="pill ${x.ok?'ok':'bad'}">${x.ok?'ok':'!'}</span></td>`
+      + `<td class="mono" title="${x.folder}">${x.folder}</td><td>${x.sessions}</td><td>${x.detail||''}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  $('result').innerHTML = html;
+}
+
+$('previewBtn').onclick = preview;
+$('importBtn').onclick = doImport;
+$('backBtn').onclick = () => $('step2').classList.add('hidden');
+$('selall').onchange = e => document.querySelectorAll('.psel').forEach(c => c.checked = e.target.checked);
+loadEnv();
+</script>
+</body>
+</html>
