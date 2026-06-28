@@ -80,6 +80,16 @@ Pick whichever you like.
 go install github.com/gowtham-sai-yadav/claude-teleport@latest
 ```
 
+This drops the binary in Go's bin directory (`$(go env GOPATH)/bin`, usually `~/go/bin`).
+If `claude-teleport: command not found`, that directory is not on your PATH yet. Add it:
+
+```bash
+# macOS / Linux (zsh)
+echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+On Windows, add `%USERPROFILE%\go\bin` to your PATH via System Settings.
+
 ### Option C - From source
 
 ```bash
