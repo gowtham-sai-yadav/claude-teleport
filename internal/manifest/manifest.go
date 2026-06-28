@@ -4,7 +4,7 @@
 package manifest
 
 const (
-	Tool          = "claude-port"
+	Tool          = "claude-teleport"
 	SchemaVersion = 1
 )
 

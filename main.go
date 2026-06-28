@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"claude-port/internal/cli"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/cli"
 )
 
 func main() {

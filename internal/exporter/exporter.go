@@ -12,9 +12,9 @@ import (
 	"runtime"
 	"time"
 
-	"claude-port/internal/bundle"
-	"claude-port/internal/claudedir"
-	"claude-port/internal/manifest"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
 )
 
 type Options struct {
@@ -54,7 +54,7 @@ func Run(opts Options) (Result, error) {
 
 	out := opts.Out
 	if out == "" {
-		out = fmt.Sprintf("claude-port-backup-%s.tgz", time.Now().Format("20060102-150405"))
+		out = fmt.Sprintf("claude-teleport-backup-%s.tgz", time.Now().Format("20060102-150405"))
 	}
 
 	man := manifest.Manifest{

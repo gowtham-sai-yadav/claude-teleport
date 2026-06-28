@@ -3,8 +3,8 @@ package importer
 import (
 	"testing"
 
-	"claude-port/internal/manifest"
-	"claude-port/internal/paths"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
 )
 
 func TestRewriteUnixToUnix(t *testing.T) {
