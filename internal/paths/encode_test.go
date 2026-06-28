@@ -4,14 +4,14 @@ import "testing"
 
 func TestEncode(t *testing.T) {
 	cases := map[string]string{
-		"/home/kali/Desktop":                            "-home-kali-Desktop",
-		"/Users/gowthamsaig/Desktop/Bleed-red":          "-Users-gowthamsaig-Desktop-Bleed-red",
-		"/home/kali/Desktop/Bug_Bounty":                 "-home-kali-Desktop-Bug-Bounty",
-		"/home/kali/Desktop/crawler_scraper":            "-home-kali-Desktop-crawler-scraper",
-		"/home/kali/Desktop/Appsec/secure-code-review":  "-home-kali-Desktop-Appsec-secure-code-review",
-		`C:\Users\bob\proj`:                             "-C-Users-bob-proj",
-		`D:\dev\my.app`:                                 "-D-dev-my-app",
-		"/home/kali/my project":                         "-home-kali-my-project",
+		"/home/kali/Desktop":                           "-home-kali-Desktop",
+		"/Users/gowthamsaig/Desktop/Bleed-red":         "-Users-gowthamsaig-Desktop-Bleed-red",
+		"/home/kali/Desktop/Bug_Bounty":                "-home-kali-Desktop-Bug-Bounty",
+		"/home/kali/Desktop/crawler_scraper":           "-home-kali-Desktop-crawler-scraper",
+		"/home/kali/Desktop/Appsec/secure-code-review": "-home-kali-Desktop-Appsec-secure-code-review",
+		`C:\Users\bob\proj`:                            "-C-Users-bob-proj",
+		`D:\dev\my.app`:                                "-D-dev-my-app",
+		"/home/kali/my project":                        "-home-kali-my-project",
 	}
 	for in, want := range cases {
 		if got := Encode(in); got != want {
