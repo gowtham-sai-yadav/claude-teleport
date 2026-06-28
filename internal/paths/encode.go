@@ -40,8 +40,8 @@ func Encode(absPath string) string {
 
 // Mapping rewrites paths that start with Old so they start with New instead.
 type Mapping struct {
-	Old string
-	New string
+	Old string `json:"old"`
+	New string `json:"new"`
 }
 
 func hasPathPrefix(path, prefix string) bool {

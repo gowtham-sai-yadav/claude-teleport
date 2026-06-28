@@ -2,6 +2,13 @@
 // each project should now live, renames the encoded folders to match, rewrites
 // the old paths baked into transcripts, and merges everything in without
 // destroying what is already there.
+//
+// The work is split so the CLI and the web GUI share one code path:
+//
+//	LoadManifest  -> read the bundle's manifest
+//	BuildPlan     -> decide new paths, mappings, and which projects are selected
+//	Import        -> execute the plan and return structured results + verification
+//	VerifyDir     -> sanity-check that migrated sessions are resume-ready
 package importer
 
 import (
@@ -18,10 +25,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"claude-port/internal/bundle"
-	"claude-port/internal/claudedir"
-	"claude-port/internal/manifest"
-	"claude-port/internal/paths"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
 )
 
 type Options struct {
@@ -34,78 +41,125 @@ type Options struct {
 	Deep       bool
 	AssumeYes  bool
 	Maps       []paths.Mapping
+	Projects   []string // selection: match by original path or encoded folder; empty = all
 }
 
-type planItem struct {
-	OldPath  string
-	NewPath  string
-	OldEnc   string
-	NewEnc   string
-	Sessions int
+// PlanItem is one project's before/after, ready to show a user.
+type PlanItem struct {
+	OldPath   string `json:"oldPath"`
+	NewPath   string `json:"newPath"`
+	OldEnc    string `json:"oldEnc"`
+	NewEnc    string `json:"newEnc"`
+	Sessions  int    `json:"sessions"`
+	HasMemory bool   `json:"hasMemory"`
+	Selected  bool   `json:"selected"`
 }
 
-func Run(opts Options) error {
-	mb, err := bundle.ReadManifest(opts.Bundle)
+// PlanResult is the full preview of an import: where things go and how paths
+// are remapped. It is JSON-serialisable for the GUI.
+type PlanResult struct {
+	SourceOS   string          `json:"sourceOS"`
+	SourceHome string          `json:"sourceHome"`
+	TargetOS   string          `json:"targetOS"`
+	TargetHome string          `json:"targetHome"`
+	Mappings   []paths.Mapping `json:"mappings"`
+	Items      []PlanItem      `json:"items"`
+	Unmatched  []string        `json:"unmatched"` // --project values that matched nothing
+}
+
+// RunResult is what an executed import produced.
+type RunResult struct {
+	Written        int            `json:"written"`
+	Skipped        int            `json:"skipped"`
+	MergedProjects int            `json:"mergedProjects"`
+	Verify         []VerifyResult `json:"verify"`
+}
+
+// VerifyResult reports whether a migrated project looks resume-ready.
+type VerifyResult struct {
+	Folder   string `json:"folder"`
+	Path     string `json:"path"`
+	Sessions int    `json:"sessions"`
+	OK       bool   `json:"ok"`
+	Detail   string `json:"detail"`
+}
+
+// LoadManifest reads and parses the manifest from a bundle.
+func LoadManifest(bundlePath string) (manifest.Manifest, error) {
+	mb, err := bundle.ReadManifest(bundlePath)
 	if err != nil {
-		return fmt.Errorf("read manifest: %w", err)
+		return manifest.Manifest{}, fmt.Errorf("read manifest: %w", err)
 	}
 	if len(mb) == 0 {
-		return fmt.Errorf("no manifest.json found — is %q a claude-port bundle?", opts.Bundle)
+		return manifest.Manifest{}, fmt.Errorf("no manifest.json found — is %q a claude-teleport bundle?", bundlePath)
 	}
 	var man manifest.Manifest
 	if err := json.Unmarshal(mb, &man); err != nil {
-		return fmt.Errorf("parse manifest: %w", err)
+		return manifest.Manifest{}, fmt.Errorf("parse manifest: %w", err)
 	}
+	return man, nil
+}
 
-	tp, err := claudedir.Locate(opts.ConfigDir)
-	if err != nil {
-		return err
+func resolveTargets(tp claudedir.Paths, opts Options) (home, osName string) {
+	home = opts.TargetHome
+	if home == "" {
+		home = tp.Home
 	}
-	targetHome := opts.TargetHome
-	if targetHome == "" {
-		targetHome = tp.Home
+	osName = opts.TargetOS
+	if osName == "" {
+		osName = runtime.GOOS
 	}
-	targetOS := opts.TargetOS
-	if targetOS == "" {
-		targetOS = runtime.GOOS
-	}
+	return home, osName
+}
 
+// BuildPlan computes the full preview without touching the filesystem.
+func BuildPlan(man manifest.Manifest, tp claudedir.Paths, opts Options) *PlanResult {
+	targetHome, targetOS := resolveTargets(tp, opts)
 	mappings := buildMappings(man, targetHome, opts.Maps)
+	selEnc, all, unmatched := resolveSelection(man, opts.Projects)
 
-	byOldEnc := map[string]planItem{}
-	var plan []planItem
+	res := &PlanResult{
+		SourceOS:   man.Source.OS,
+		SourceHome: man.Source.Home,
+		TargetOS:   targetOS,
+		TargetHome: targetHome,
+		Mappings:   mappings,
+		Unmatched:  unmatched,
+	}
 	for _, pr := range man.Projects {
-		it := planItem{OldPath: pr.OriginalPath, OldEnc: pr.EncodedFolder, Sessions: pr.Sessions}
+		it := PlanItem{OldPath: pr.OriginalPath, OldEnc: pr.EncodedFolder, Sessions: pr.Sessions, HasMemory: pr.HasMemory}
 		if pr.OriginalPath == "" {
 			it.NewEnc = pr.EncodedFolder // can't remap a path we never recovered
 		} else {
 			it.NewPath = paths.Remap(pr.OriginalPath, mappings, targetOS)
 			it.NewEnc = paths.Encode(it.NewPath)
 		}
-		byOldEnc[pr.EncodedFolder] = it
-		plan = append(plan, it)
+		it.Selected = all || selEnc[pr.EncodedFolder]
+		res.Items = append(res.Items, it)
 	}
+	return res
+}
 
-	printSummary(man, targetHome, targetOS, mappings, plan)
-
-	if opts.DryRun {
-		fmt.Println("\nDry run — nothing was written.")
-		return nil
+// resolveSelection turns --project values (matched against original path or
+// encoded folder) into a set of encoded folders. Empty selection means all.
+func resolveSelection(man manifest.Manifest, sel []string) (selEnc map[string]bool, all bool, unmatched []string) {
+	if len(sel) == 0 {
+		return nil, true, nil
 	}
-	if !opts.AssumeYes && !confirm("Proceed with import?") {
-		fmt.Println("Aborted.")
-		return nil
+	selEnc = map[string]bool{}
+	for _, v := range sel {
+		matched := false
+		for _, pr := range man.Projects {
+			if v == pr.OriginalPath || v == pr.EncodedFolder {
+				selEnc[pr.EncodedFolder] = true
+				matched = true
+			}
+		}
+		if !matched {
+			unmatched = append(unmatched, v)
+		}
 	}
-
-	j := &job{opts: opts, tp: tp, byOldEnc: byOldEnc, mappings: mappings, targetOS: targetOS}
-	if err := j.execute(); err != nil {
-		return err
-	}
-
-	fmt.Printf("\nDone. %d files written, %d skipped (already present).\n", j.written, j.skipped)
-	fmt.Println("\nIMPORTANT: your login was NOT transferred — credentials never are.")
-	fmt.Println("Open Claude Code, log in once, then run `claude --resume` inside a project.")
-	return nil
+	return selEnc, false, unmatched
 }
 
 // buildMappings produces the old->new path rules. Explicit --map rules win;
@@ -147,30 +201,200 @@ func buildMappings(man manifest.Manifest, targetHome string, explicit []paths.Ma
 	return out
 }
 
-func printSummary(man manifest.Manifest, targetHome, targetOS string, mappings []paths.Mapping, plan []planItem) {
-	fmt.Println("claude-port import")
-	fmt.Printf("  bundle source : %s (home %s)\n", man.Source.OS, man.Source.Home)
-	fmt.Printf("  this machine  : %s (home %s)\n", targetOS, targetHome)
-	fmt.Printf("  projects      : %d\n", len(plan))
+// Import executes the plan and returns structured results. It does not print.
+func Import(tp claudedir.Paths, plan *PlanResult, opts Options) (*RunResult, error) {
+	byOldEnc := map[string]PlanItem{}
+	selEnc := map[string]bool{}
+	selOrig := map[string]bool{}
+	for _, it := range plan.Items {
+		byOldEnc[it.OldEnc] = it
+		if it.Selected {
+			selEnc[it.OldEnc] = true
+			if it.OldPath != "" {
+				selOrig[it.OldPath] = true
+			}
+		}
+	}
+	j := &job{
+		opts:      opts,
+		tp:        tp,
+		byOldEnc:  byOldEnc,
+		mappings:  plan.Mappings,
+		targetOS:  plan.TargetOS,
+		selectAll: len(opts.Projects) == 0,
+		selEnc:    selEnc,
+		selOrig:   selOrig,
+	}
+	if err := j.execute(); err != nil {
+		return nil, err
+	}
+
+	res := &RunResult{Written: j.written, Skipped: j.skipped, MergedProjects: j.merged}
+	var folders []string
+	for _, it := range plan.Items {
+		if it.Selected {
+			folders = append(folders, it.NewEnc)
+		}
+	}
+	res.Verify = verifyFolders(tp.ProjectsDir, folders)
+	return res, nil
+}
+
+// VerifyDir scans every project folder under the target and reports whether
+// each one looks resume-ready (its first transcript's cwd encodes back to the
+// folder it lives in).
+func VerifyDir(tp claudedir.Paths) []VerifyResult {
+	entries, err := os.ReadDir(tp.ProjectsDir)
+	if err != nil {
+		return nil
+	}
+	var folders []string
+	for _, e := range entries {
+		if e.IsDir() {
+			folders = append(folders, e.Name())
+		}
+	}
+	return verifyFolders(tp.ProjectsDir, folders)
+}
+
+func verifyFolders(projectsDir string, folders []string) []VerifyResult {
+	var out []VerifyResult
+	seen := map[string]bool{}
+	for _, f := range folders {
+		if seen[f] {
+			continue
+		}
+		seen[f] = true
+
+		vr := VerifyResult{Folder: f}
+		dir := filepath.Join(projectsDir, f)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			vr.Detail = "folder missing"
+			out = append(out, vr)
+			continue
+		}
+		var first string
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+				vr.Sessions++
+				if first == "" {
+					first = filepath.Join(dir, e.Name())
+				}
+			}
+		}
+		switch {
+		case vr.Sessions == 0:
+			vr.Detail = "no sessions"
+		default:
+			cwd := claudedir.ReadCwd(first)
+			if cwd == "" {
+				vr.Detail = "no cwd recorded in transcript"
+			} else {
+				vr.Path = cwd
+				if paths.Encode(cwd) == f {
+					vr.OK = true
+				} else {
+					vr.Detail = "transcript cwd does not match its folder"
+				}
+			}
+		}
+		out = append(out, vr)
+	}
+	return out
+}
+
+// Run is the CLI entry point: it loads, previews, confirms, executes, and
+// prints. The GUI calls BuildPlan/Import directly instead.
+func Run(opts Options) error {
+	man, err := LoadManifest(opts.Bundle)
+	if err != nil {
+		return err
+	}
+	tp, err := claudedir.Locate(opts.ConfigDir)
+	if err != nil {
+		return err
+	}
+	plan := BuildPlan(man, tp, opts)
+	printPlan(plan)
+	if len(plan.Unmatched) > 0 {
+		fmt.Printf("\nWarning: --project value(s) matched nothing: %s\n", strings.Join(plan.Unmatched, ", "))
+	}
+
+	if opts.DryRun {
+		fmt.Println("\nDry run — nothing was written.")
+		return nil
+	}
+	if !opts.AssumeYes && !confirm("Proceed with import?") {
+		fmt.Println("Aborted.")
+		return nil
+	}
+
+	res, err := Import(tp, plan, opts)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nDone. %d file(s) written, %d skipped (already present); %d project entr%s merged into .claude.json.\n",
+		res.Written, res.Skipped, res.MergedProjects, plural(res.MergedProjects))
+	printVerify(res.Verify)
+	fmt.Println("\nIMPORTANT: your login was NOT transferred — credentials never are.")
+	fmt.Println("Open Claude Code, log in once, then run `claude --resume` inside a project.")
+	return nil
+}
+
+func printPlan(p *PlanResult) {
+	selected := 0
+	for _, it := range p.Items {
+		if it.Selected {
+			selected++
+		}
+	}
+	fmt.Println("claude-teleport import")
+	fmt.Printf("  bundle source : %s (home %s)\n", p.SourceOS, p.SourceHome)
+	fmt.Printf("  this machine  : %s (home %s)\n", p.TargetOS, p.TargetHome)
+	fmt.Printf("  projects      : %d selected of %d\n", selected, len(p.Items))
 
 	fmt.Println("\nPath remapping:")
-	for _, m := range mappings {
+	for _, m := range p.Mappings {
 		fmt.Printf("  %s  ->  %s\n", m.Old, m.New)
 	}
 
 	fmt.Println("\nProjects:")
-	sort.Slice(plan, func(i, j int) bool { return plan[i].OldPath < plan[j].OldPath })
+	items := append([]PlanItem(nil), p.Items...)
+	sort.Slice(items, func(i, j int) bool { return items[i].OldPath < items[j].OldPath })
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "  OLD\tNEW\tSESSIONS")
-	for _, it := range plan {
+	fmt.Fprintln(tw, "  \tOLD\tNEW\tSESSIONS")
+	for _, it := range items {
+		mark := " "
+		if it.Selected {
+			mark = "+"
+		}
 		old, nw := it.OldPath, it.NewPath
 		if old == "" {
 			old = "(unknown) " + it.OldEnc
 			nw = "(folder kept as-is)"
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t%d\n", old, nw, it.Sessions)
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%d\n", mark, old, nw, it.Sessions)
 	}
 	tw.Flush()
+}
+
+func printVerify(vs []VerifyResult) {
+	if len(vs) == 0 {
+		return
+	}
+	ok := 0
+	for _, v := range vs {
+		if v.OK {
+			ok++
+		}
+	}
+	fmt.Printf("\nVerify: %d/%d migrated project(s) look resume-ready.\n", ok, len(vs))
+	for _, v := range vs {
+		if !v.OK {
+			fmt.Printf("  ! %s — %s\n", v.Folder, v.Detail)
+		}
+	}
 }
 
 func confirm(q string) bool {
@@ -183,13 +407,19 @@ func confirm(q string) bool {
 type job struct {
 	opts       Options
 	tp         claudedir.Paths
-	byOldEnc   map[string]planItem
+	byOldEnc   map[string]PlanItem
 	mappings   []paths.Mapping
 	targetOS   string
+	selectAll  bool
+	selEnc     map[string]bool
+	selOrig    map[string]bool
 	written    int
 	skipped    int
+	merged     int
 	claudeJSON []byte
 }
+
+func (j *job) selectedEnc(oldEnc string) bool { return j.selectAll || j.selEnc[oldEnc] }
 
 func (j *job) execute() error {
 	err := bundle.ForEach(j.opts.Bundle, func(h *tar.Header, r io.Reader) error {
@@ -230,6 +460,10 @@ func (j *job) writeProjectEntry(name string, r io.Reader) error {
 		return nil
 	}
 	oldEnc, sub := rest[:slash], rest[slash+1:]
+	if !j.selectedEnc(oldEnc) {
+		_, _ = io.Copy(io.Discard, r) // not selected for this import
+		return nil
+	}
 	it, ok := j.byOldEnc[oldEnc]
 	newEnc := oldEnc
 	if ok {
@@ -295,7 +529,6 @@ func (j *job) writeTranscript(dest string, r io.Reader, oldPath, newPath string)
 	bw := bufio.NewWriter(f)
 
 	rw := newPathRewriter(oldPath, newPath, j.opts.Deep)
-
 	br := bufio.NewReader(r)
 	for {
 		line, rerr := br.ReadBytes('\n')
@@ -405,12 +638,18 @@ func (j *job) mergeClaudeJSON() error {
 
 	added := 0
 	for k, v := range srcProjects {
+		if !j.selectAll && !j.selOrig[k] {
+			continue // project not selected for this import
+		}
 		nk := paths.Remap(k, j.mappings, j.targetOS)
 		if _, exists := tgtProjects[nk]; exists && !j.opts.Overwrite {
 			continue
 		}
 		tgtProjects[nk] = v
 		added++
+	}
+	if added == 0 {
+		return nil
 	}
 	target["projects"] = tgtProjects
 
@@ -427,7 +666,7 @@ func (j *job) mergeClaudeJSON() error {
 	if err := os.WriteFile(j.tp.JSONPath, out, 0o600); err != nil {
 		return err
 	}
-	fmt.Printf("Merged %d project entr%s into %s\n", added, plural(added), j.tp.JSONPath)
+	j.merged = added
 	return nil
 }
 

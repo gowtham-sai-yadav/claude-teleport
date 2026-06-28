@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"claude-port/internal/paths"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
 )
 
 type Paths struct {
@@ -144,6 +144,10 @@ func recoverPath(dir string) string {
 	}
 	return ""
 }
+
+// ReadCwd returns the working directory recorded in a transcript file, or ""
+// if none is found. Exported for the verify step.
+func ReadCwd(path string) string { return cwdFromFile(path) }
 
 // cwdFromFile reads the early events of a transcript looking for the "cwd"
 // field. It skips absurdly long lines (some events carry megabytes of tool
