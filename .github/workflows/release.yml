@@ -1,0 +1,38 @@
+name: Release
+
+# Tag a commit (e.g. `git tag v0.1.0 && git push --tags`) to build binaries
+# for every OS/arch and attach them to a GitHub Release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cross-compile binaries
+        run: |
+          mkdir -p dist
+          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            export GOOS=${t%/*} GOARCH=${t#*/} CGO_ENABLED=0
+            out=claude-teleport-${GOOS}-${GOARCH}
+            [ "$GOOS" = windows ] && out=${out}.exe
+            echo "building $out"
+            go build -trimpath -ldflags "-s -w" -o "dist/$out" .
+          done
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
