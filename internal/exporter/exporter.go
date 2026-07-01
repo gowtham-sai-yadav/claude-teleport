@@ -31,14 +31,13 @@ type Result struct {
 	Bytes        int64
 }
 
-// dropKeys are fields in ~/.claude.json that identify the old device or are
-// pure local UI/cache state. We never carry them to a new machine.
-var dropKeys = []string{
-	"machineID", "userID", "anonymousId", "oauthAccount",
-	"customApiKeyResponses", "cachedGrowthBookFeatures",
-	"cachedExperimentFeatures", "cachedChangelog", "tipsHistory",
-	"tipLifetimeShownCounts", "numStartups", "firstStartTime",
-	"fallbackAvailableWarningThreshold", "lastReleaseNotesSeen",
+// keepKeys is the allowlist of ~/.claude.json fields carried in a bundle.
+// Everything else is dropped by default so device identity, tokens, API keys,
+// and any future secret field never leave the machine. Only "projects" is
+// actually used on import (re-keyed to the new paths); its per-project values
+// are preserved as-is because that is the config the user wants to carry.
+var keepKeys = map[string]bool{
+	"projects": true,
 }
 
 func Run(opts Options) (Result, error) {
@@ -172,10 +171,13 @@ func sanitize(raw []byte) ([]byte, error) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err
 	}
-	for _, k := range dropKeys {
-		delete(m, k)
+	out := map[string]any{}
+	for k, v := range m {
+		if keepKeys[k] {
+			out[k] = v
+		}
 	}
-	return json.MarshalIndent(m, "", "  ")
+	return json.MarshalIndent(out, "", "  ")
 }
 
 func addTree(w *bundle.Writer, srcDir, prefix string) error {
