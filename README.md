@@ -18,10 +18,16 @@ Linux · macOS · Windows, in any direction.
 
 ---
 
-Claude Code keeps your chat history, memory, and settings in local files on your machine.
-Switch laptops and they get left behind. **claude-teleport** packs them into one portable
-file on the old computer and unpacks them on the new one - renaming folders and rewriting the
-old paths so your past conversations resume exactly where they should.
+If you live in Claude Code, losing your sessions feels like losing part of your workspace.
+
+When I moved from my Linux laptop to a new Mac, I wanted to bring all of it with me: my
+sessions, conversation history, memory, and project context. There was no clean way to do it.
+Copying the files by hand is tedious, and because project paths change between machines,
+nothing just works when you get there.
+
+So I built claude-teleport. It packs your whole Claude Code setup into one file on the old
+machine and restores it on the new one, rewriting every path so your conversations resume
+exactly where you left off.
 
 ```
 ┌─────────────┐    export     ┌───────────────┐   import (paths fixed)   ┌─────────────┐
