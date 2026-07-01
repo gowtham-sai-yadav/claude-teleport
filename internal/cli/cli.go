@@ -16,7 +16,7 @@ import (
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/webui"
 )
 
-const Version = "0.1.0"
+const Version = "0.1.1"
 
 func Run(args []string) error {
 	if len(args) == 0 {
