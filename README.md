@@ -10,6 +10,9 @@ Linux · macOS · Windows, in any direction.
 [![Release](https://img.shields.io/github/v/release/gowtham-sai-yadav/claude-teleport?include_prereleases&sort=semver)](https://github.com/gowtham-sai-yadav/claude-teleport/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/gowtham-sai-yadav/claude-teleport)](https://goreportcard.com/report/github.com/gowtham-sai-yadav/claude-teleport)
+
+<img src="docs/demo.gif" alt="claude-teleport demo: migrate your Claude Code history to a new machine" width="820">
 
 </div>
 
@@ -262,6 +265,12 @@ go run . gui      # try the wizard locally
 
 CI runs lint and tests on Linux, macOS, and Windows. Tagging `vX.Y.Z` builds and publishes
 release binaries automatically.
+
+## Star history
+
+<a href="https://star-history.com/#gowtham-sai-yadav/claude-teleport&Date">
+  <img src="https://api.star-history.com/svg?repos=gowtham-sai-yadav/claude-teleport&type=Date" alt="Star history chart" width="600">
+</a>
 
 ## License
 
