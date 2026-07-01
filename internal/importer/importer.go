@@ -72,6 +72,7 @@ type RunResult struct {
 	Written        int            `json:"written"`
 	Skipped        int            `json:"skipped"`
 	MergedProjects int            `json:"mergedProjects"`
+	Rejected       int            `json:"rejected"` // entries refused because they tried to escape the target dir
 	Verify         []VerifyResult `json:"verify"`
 }
 
@@ -229,7 +230,7 @@ func Import(tp claudedir.Paths, plan *PlanResult, opts Options) (*RunResult, err
 		return nil, err
 	}
 
-	res := &RunResult{Written: j.written, Skipped: j.skipped, MergedProjects: j.merged}
+	res := &RunResult{Written: j.written, Skipped: j.skipped, MergedProjects: j.merged, Rejected: j.rejected}
 	var folders []string
 	for _, it := range plan.Items {
 		if it.Selected {
@@ -336,6 +337,10 @@ func Run(opts Options) error {
 	}
 	fmt.Printf("\nDone. %d file(s) written, %d skipped (already present); %d project entr%s merged into .claude.json.\n",
 		res.Written, res.Skipped, res.MergedProjects, plural(res.MergedProjects))
+	if res.Rejected > 0 {
+		fmt.Printf("WARNING: %d entr%s in this bundle tried to write outside the target directory and were refused. This bundle may be malicious.\n",
+			res.Rejected, plural(res.Rejected))
+	}
 	printVerify(res.Verify)
 	fmt.Println("\nIMPORTANT: your login was NOT transferred - credentials never are.")
 	fmt.Println("Open Claude Code, log in once, then run `claude --resume` inside a project.")
@@ -416,10 +421,30 @@ type job struct {
 	written    int
 	skipped    int
 	merged     int
+	rejected   int
 	claudeJSON []byte
 }
 
 func (j *job) selectedEnc(oldEnc string) bool { return j.selectAll || j.selEnc[oldEnc] }
+
+// safeJoin joins base with parts and reports ok=false if the result would
+// escape base (for example via ".." in a crafted bundle entry). Legitimate
+// bundles never contain "..", so this only rejects malicious input.
+func safeJoin(base string, parts ...string) (string, bool) {
+	dest := filepath.Join(append([]string{base}, parts...)...)
+	rel, err := filepath.Rel(base, dest)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return dest, true
+}
+
+// skipUnsafe drains and counts an entry that tried to escape the target dir.
+func (j *job) skipUnsafe(r io.Reader) error {
+	j.rejected++
+	_, _ = io.Copy(io.Discard, r)
+	return nil
+}
 
 func (j *job) execute() error {
 	err := bundle.ForEach(j.opts.Bundle, func(h *tar.Header, r io.Reader) error {
@@ -438,11 +463,19 @@ func (j *job) execute() error {
 			return j.writeHistory(filepath.Join(j.tp.ConfigDir, "history.jsonl"), r)
 		case strings.HasPrefix(name, "config/"):
 			base := strings.TrimPrefix(name, "config/")
-			return j.writePlain(filepath.Join(j.tp.ConfigDir, filepath.FromSlash(base)), r)
+			dest, ok := safeJoin(j.tp.ConfigDir, filepath.FromSlash(base))
+			if !ok {
+				return j.skipUnsafe(r)
+			}
+			return j.writePlain(dest, r)
 		case strings.HasPrefix(name, "projects/"):
 			return j.writeProjectEntry(name, r)
 		case strings.HasPrefix(name, "plans/"), strings.HasPrefix(name, "plugins/"):
-			return j.writePlain(filepath.Join(j.tp.ConfigDir, filepath.FromSlash(name)), r)
+			dest, ok := safeJoin(j.tp.ConfigDir, filepath.FromSlash(name))
+			if !ok {
+				return j.skipUnsafe(r)
+			}
+			return j.writePlain(dest, r)
 		default:
 			return nil
 		}
@@ -469,7 +502,10 @@ func (j *job) writeProjectEntry(name string, r io.Reader) error {
 	if ok {
 		newEnc = it.NewEnc
 	}
-	dest := filepath.Join(j.tp.ProjectsDir, newEnc, filepath.FromSlash(sub))
+	dest, safe := safeJoin(j.tp.ProjectsDir, newEnc, filepath.FromSlash(sub))
+	if !safe {
+		return j.skipUnsafe(r)
+	}
 
 	if strings.HasSuffix(sub, ".jsonl") && ok && it.OldPath != "" && it.NewPath != "" && it.OldPath != it.NewPath {
 		return j.writeTranscript(dest, r, it.OldPath, it.NewPath)
