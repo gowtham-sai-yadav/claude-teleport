@@ -316,6 +316,18 @@ func Run(opts Options) error {
 	if err != nil {
 		return err
 	}
+
+	// A shared single session should land in the project the user is standing
+	// in, not wherever it lived on the sender's machine. When they gave no
+	// explicit mapping, map the session's source path to the current directory.
+	if man.IsSession() && len(opts.Maps) == 0 && opts.TargetHome == "" {
+		if cwd, err := os.Getwd(); err == nil && len(man.Projects) == 1 && man.Projects[0].OriginalPath != "" {
+			opts.Maps = []paths.Mapping{{Old: man.Projects[0].OriginalPath, New: cwd}}
+			fmt.Printf("Shared session. Attaching it to the current directory:\n  %s\n", cwd)
+			fmt.Println("(cd into the matching project first, or pass --map OLD=NEW to place it elsewhere.)")
+		}
+	}
+
 	plan := BuildPlan(man, tp, opts)
 	printPlan(plan)
 	if len(plan.Unmatched) > 0 {
