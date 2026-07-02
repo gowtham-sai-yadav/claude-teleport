@@ -6,6 +6,10 @@ package manifest
 const (
 	Tool          = "claude-teleport"
 	SchemaVersion = 1
+
+	// KindFull is a whole-machine backup; KindSession is a single shared session.
+	KindFull    = "full"
+	KindSession = "session"
 )
 
 type Project struct {
@@ -27,7 +31,13 @@ type Manifest struct {
 	ToolVersion   string    `json:"toolVersion"`
 	SchemaVersion int       `json:"schemaVersion"`
 	CreatedAt     string    `json:"createdAt"`
+	Kind          string    `json:"kind,omitempty"`      // "" or "full" = whole backup; "session" = one shared session
+	SessionID     string    `json:"sessionId,omitempty"` // set only for Kind == "session"
+	Redacted      bool      `json:"redacted,omitempty"`  // secrets were scrubbed before packing
 	Source        Source    `json:"source"`
 	Includes      []string  `json:"includes"`
 	Projects      []Project `json:"projects"`
 }
+
+// IsSession reports whether this bundle carries a single shared session.
+func (m Manifest) IsSession() bool { return m.Kind == KindSession }
