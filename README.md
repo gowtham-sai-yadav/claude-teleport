@@ -40,6 +40,7 @@ exactly where you left off.
 - [Why you need it](#why-you-need-it)
 - [Install](#install)
 - [Quick start (5 minutes)](#quick-start-5-minutes)
+- [Share one session with a teammate](#share-one-session-with-a-teammate)
 - [Prefer clicking? Use the GUI](#prefer-clicking-use-the-gui)
 - [Moving between different operating systems](#moving-between-different-operating-systems)
 - [Command reference](#command-reference)
@@ -155,6 +156,49 @@ That's it. Your old conversations are there.
 > to each machine and should never travel in a file. Just sign in to Claude Code once on the
 > new computer.
 
+## Share one session with a teammate
+
+Moving your whole setup is one thing. Sometimes you just want to hand a single
+conversation to a teammate so they can pick up exactly where you left off, with
+all your context intact.
+
+First, find the session you want:
+
+```bash
+claude-teleport sessions
+```
+
+You get a list with a short ID, when it was last active, how many messages it
+has, the project, and the first thing you asked, so it is easy to spot the right
+one. Then pack it into a file:
+
+```bash
+claude-teleport share 8d84f55b
+```
+
+Before it writes anything, it shows you exactly what is about to leave your
+machine and asks you to confirm. It **scans for and masks likely secrets**
+(API keys, tokens, private keys, `password=...`) first. This is best effort, not
+a guarantee, so glance at what you are sending if it matters.
+
+Your teammate drops into their own copy of the project and imports it:
+
+```bash
+cd ~/their/copy/of/the/project
+claude-teleport import claude-teleport-session-8d84f55b.tgz
+```
+
+The session attaches to whatever directory they are standing in, with every path
+rewritten for their machine, so `claude --resume` picks it up right away.
+
+Notes:
+
+- Only the conversation is shared by default. Add `--with-context` to include the
+  project's memory files too.
+- `--last` shares your most recent session without needing the ID.
+- `--no-redact` sends the raw transcript unscrubbed (not recommended).
+- Your login is never included, here or anywhere.
+
 ## Prefer clicking? Use the GUI
 
 Not a terminal person? Run:
@@ -185,11 +229,13 @@ transcripts are JSON, Windows paths are matched and re-written in their escaped 
 ## Command reference
 
 ```
-claude-teleport export  [--out FILE] [--config-dir DIR]
-claude-teleport import  <bundle> [flags]
-claude-teleport inspect <bundle>
-claude-teleport verify  [--config-dir DIR]
-claude-teleport gui     [bundle] [--port N]
+claude-teleport export   [--out FILE] [--config-dir DIR]
+claude-teleport import   <bundle> [flags]
+claude-teleport inspect  <bundle>
+claude-teleport verify   [--config-dir DIR]
+claude-teleport sessions [--project P] [--config-dir DIR]
+claude-teleport share    <session-id-prefix | --last> [--out FILE] [--with-context] [--no-redact] [--yes]
+claude-teleport gui      [bundle] [--port N]
 ```
 
 **`import` flags**
@@ -207,6 +253,9 @@ claude-teleport gui     [bundle] [--port N]
 
 - **`inspect`** prints what's inside a bundle without importing.
 - **`verify`** checks that the sessions already on this machine are resume-ready.
+- **`sessions`** lists your conversations so you can pick one to hand off.
+- **`share`** packs a single session into a file for a teammate, masking likely
+  secrets first. They import it from inside their own copy of the project.
 
 ## What gets moved (and what doesn't)
 
