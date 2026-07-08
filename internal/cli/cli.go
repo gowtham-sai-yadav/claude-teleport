@@ -2,10 +2,13 @@
 package cli
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
@@ -32,6 +35,10 @@ func Run(args []string) error {
 		return runInspect(args[1:])
 	case "verify":
 		return runVerify(args[1:])
+	case "sessions":
+		return runSessions(args[1:])
+	case "share":
+		return runShare(args[1:])
 	case "gui":
 		return runGUI(args[1:])
 	case "version", "-v", "--version":
@@ -52,12 +59,16 @@ func printHelp() {
 		"  claude-teleport import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
 		"  claude-teleport inspect <bundle>\n" +
 		"  claude-teleport verify  [--config-dir DIR]\n" +
+		"  claude-teleport sessions [--project P] [--config-dir DIR]\n" +
+		"  claude-teleport share   <session-id-prefix | --last> [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
 		"  claude-teleport gui     [bundle] [--port N]\n\n" +
 		"EXPORT runs on the OLD machine and writes a portable bundle.\n" +
 		"IMPORT runs on the NEW machine and restores it, translating paths for this OS\n" +
 		"(Linux, macOS, or Windows - drive letters and backslashes handled).\n" +
-		"GUI opens a point-and-click wizard in your browser. VERIFY checks that migrated\n" +
-		"sessions are resume-ready. Your login is never copied - log in once after importing.\n")
+		"SESSIONS lists your conversations so you can find one to hand off. SHARE packs a\n" +
+		"single session into a file for a teammate (secrets scrubbed first); they import it\n" +
+		"from inside their copy of the project. GUI opens a point-and-click wizard. VERIFY\n" +
+		"checks migrated sessions are resume-ready. Your login is never copied - log in once.\n")
 }
 
 func runExport(args []string) error {
@@ -154,6 +165,116 @@ func runVerify(args []string) error {
 	return nil
 }
 
+func runSessions(args []string) error {
+	fs := flag.NewFlagSet("sessions", flag.ContinueOnError)
+	cfg := fs.String("config-dir", "", "override the Claude config dir")
+	project := fs.String("project", "", "only sessions whose project path or folder contains this")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	tp, err := claudedir.Locate(*cfg)
+	if err != nil {
+		return err
+	}
+	sessions, err := claudedir.ListSessions(tp)
+	if err != nil {
+		return err
+	}
+	sessions = filterSessions(sessions, *project)
+	if len(sessions) == 0 {
+		fmt.Println("No sessions found.")
+		return nil
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tLAST ACTIVE\tMSGS\tPROJECT\tTITLE")
+	for _, s := range sessions {
+		proj := s.ProjectPath
+		if proj == "" {
+			proj = "(unknown)"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n",
+			s.ShortID(), s.ModTime.Format("2006-01-02 15:04"), s.Messages, proj, s.Title)
+	}
+	tw.Flush()
+	fmt.Printf("\n%d session(s). Share one with: claude-teleport share <ID>\n", len(sessions))
+	return nil
+}
+
+func filterSessions(in []claudedir.Session, needle string) []claudedir.Session {
+	if needle == "" {
+		return in
+	}
+	needle = strings.ToLower(needle)
+	var out []claudedir.Session
+	for _, s := range in {
+		if strings.Contains(strings.ToLower(s.ProjectPath), needle) ||
+			strings.Contains(strings.ToLower(s.Folder), needle) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func runShare(args []string) error {
+	fs := flag.NewFlagSet("share", flag.ContinueOnError)
+	out := fs.String("out", "", "output file path")
+	cfg := fs.String("config-dir", "", "override the Claude config dir")
+	last := fs.Bool("last", false, "share your most recent session")
+	withContext := fs.Bool("with-context", false, "also include the project's memory/context files")
+	noRedact := fs.Bool("no-redact", false, "do NOT scrub secrets before packing (not recommended)")
+	yes := fs.Bool("yes", false, "skip the confirmation prompt")
+	pos, err := parseInterleaved(fs, args)
+	if err != nil {
+		return err
+	}
+	prefix := ""
+	if len(pos) > 0 {
+		prefix = pos[0]
+	}
+	if prefix == "" && !*last {
+		return fmt.Errorf("usage: claude-teleport share <session-id-prefix | --last>")
+	}
+	return exporter.RunShare(exporter.ShareOptions{
+		ConfigDir:     *cfg,
+		Version:       Version,
+		Out:           *out,
+		SessionPrefix: prefix,
+		Last:          *last,
+		WithContext:   *withContext,
+		Redact:        !*noRedact,
+		AssumeYes:     *yes,
+		Confirm:       confirmShare,
+	})
+}
+
+// confirmShare is passed into the exporter so the summary and prompt live in
+// one place (the CLI) while the packing logic stays in the exporter.
+func confirmShare(preview exporter.SharePreview) bool {
+	fmt.Println("About to share ONE session. This leaves your machine, so read it:")
+	fmt.Printf("  session : %s  (%s)\n", preview.Title, preview.ShortID)
+	fmt.Printf("  project : %s\n", preview.ProjectPath)
+	fmt.Printf("  content : %d message(s), %.1f MB\n", preview.Messages, float64(preview.Bytes)/(1024*1024))
+	if preview.WithContext {
+		fmt.Println("  context : project memory INCLUDED (--with-context)")
+	} else {
+		fmt.Println("  context : conversation only (memory not included)")
+	}
+	if preview.Redact {
+		fmt.Printf("  secrets : %d likely secret(s) masked (best effort, not a guarantee)\n", preview.SecretsMasked)
+	} else {
+		fmt.Println("  secrets : NOT scrubbed (--no-redact) - the raw transcript will be shared")
+	}
+	return confirm("Write this file?")
+}
+
+// confirm asks a yes/no question on the terminal (default no).
+func confirm(q string) bool {
+	fmt.Printf("%s [y/N]: ", q)
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	line = strings.TrimSpace(strings.ToLower(line))
+	return line == "y" || line == "yes"
+}
+
 func runGUI(args []string) error {
 	fs := flag.NewFlagSet("gui", flag.ContinueOnError)
 	port := fs.Int("port", 0, "port to listen on (0 = pick a free one)")
@@ -215,6 +336,12 @@ func runInspect(args []string) error {
 		return err
 	}
 	fmt.Printf("tool        : %s %s\n", man.Tool, man.ToolVersion)
+	if man.IsSession() {
+		fmt.Printf("kind        : single session (%s)\n", man.SessionID)
+		fmt.Printf("redacted    : %v\n", man.Redacted)
+	} else {
+		fmt.Printf("kind        : full backup\n")
+	}
 	fmt.Printf("created     : %s\n", man.CreatedAt)
 	fmt.Printf("source OS   : %s\n", man.Source.OS)
 	fmt.Printf("source home : %s\n", man.Source.Home)
