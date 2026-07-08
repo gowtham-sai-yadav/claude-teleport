@@ -258,7 +258,7 @@ claude-teleport import   <bundle> [flags]
 claude-teleport inspect  <bundle>
 claude-teleport verify   [--config-dir DIR]
 claude-teleport sessions [--project P] [--config-dir DIR]
-claude-teleport share    <session-id-prefix | --last> [--out FILE] [--with-context] [--no-redact] [--yes]
+claude-teleport share    <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]
 claude-teleport gui      [bundle] [--port N]
 ```
 

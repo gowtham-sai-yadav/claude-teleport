@@ -19,7 +19,7 @@ import (
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/webui"
 )
 
-const Version = "0.2.0"
+const Version = "0.2.1"
 
 func Run(args []string) error {
 	if len(args) == 0 {
@@ -60,7 +60,7 @@ func printHelp() {
 		"  claude-teleport inspect <bundle>\n" +
 		"  claude-teleport verify  [--config-dir DIR]\n" +
 		"  claude-teleport sessions [--project P] [--config-dir DIR]\n" +
-		"  claude-teleport share   <session-id-prefix | --last> [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
+		"  claude-teleport share   <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
 		"  claude-teleport gui     [bundle] [--port N]\n\n" +
 		"EXPORT runs on the OLD machine and writes a portable bundle.\n" +
 		"IMPORT runs on the NEW machine and restores it, translating paths for this OS\n" +
@@ -82,8 +82,8 @@ func runExport(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Exported %d project(s), %d session(s) -> %s (%.1f MB)\n",
-		res.Projects, res.Sessions, res.Path, float64(res.Bytes)/(1024*1024))
+	fmt.Printf("Exported %d project(s), %d session(s) -> %s (%s)\n",
+		res.Projects, res.Sessions, res.Path, exporter.HumanSize(res.Bytes))
 	if res.UnknownPaths > 0 {
 		fmt.Printf("Note: %d folder(s) had no recoverable path; they import under their original name.\n", res.UnknownPaths)
 	}
@@ -220,6 +220,7 @@ func runShare(args []string) error {
 	out := fs.String("out", "", "output file path")
 	cfg := fs.String("config-dir", "", "override the Claude config dir")
 	last := fs.Bool("last", false, "share your most recent session")
+	project := fs.String("project", "", "disambiguate by project when the same id exists in more than one")
 	withContext := fs.Bool("with-context", false, "also include the project's memory/context files")
 	noRedact := fs.Bool("no-redact", false, "do NOT scrub secrets before packing (not recommended)")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt")
@@ -239,6 +240,7 @@ func runShare(args []string) error {
 		Version:       Version,
 		Out:           *out,
 		SessionPrefix: prefix,
+		Project:       *project,
 		Last:          *last,
 		WithContext:   *withContext,
 		Redact:        !*noRedact,
@@ -253,7 +255,7 @@ func confirmShare(preview exporter.SharePreview) bool {
 	fmt.Println("About to share ONE session. This leaves your machine, so read it:")
 	fmt.Printf("  session : %s  (%s)\n", preview.Title, preview.ShortID)
 	fmt.Printf("  project : %s\n", preview.ProjectPath)
-	fmt.Printf("  content : %d message(s), %.1f MB\n", preview.Messages, float64(preview.Bytes)/(1024*1024))
+	fmt.Printf("  content : %d message(s), %s\n", preview.Messages, exporter.HumanSize(preview.Bytes))
 	if preview.WithContext {
 		fmt.Println("  context : project memory INCLUDED (--with-context)")
 	} else {

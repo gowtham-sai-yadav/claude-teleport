@@ -82,30 +82,51 @@ func ListSessions(p Paths) ([]Session, error) {
 }
 
 // FindSession resolves an id prefix to exactly one session, erroring clearly on
-// no match or an ambiguous prefix.
-func FindSession(p Paths, prefix string) (Session, error) {
+// no match or an ambiguous prefix. An optional project filter (matched against
+// the project path or encoded folder) narrows the search, which is how you pick
+// when the same session id exists under more than one project.
+func FindSession(p Paths, prefix, project string) (Session, error) {
 	sessions, err := ListSessions(p)
 	if err != nil {
 		return Session{}, err
 	}
 	var matches []Session
 	for _, s := range sessions {
-		if s.ID == prefix || strings.HasPrefix(s.ID, prefix) {
-			matches = append(matches, s)
+		if prefix != "" && s.ID != prefix && !strings.HasPrefix(s.ID, prefix) {
+			continue
 		}
+		if project != "" && !sessionInProject(s, project) {
+			continue
+		}
+		matches = append(matches, s)
 	}
 	switch len(matches) {
 	case 0:
+		if project != "" {
+			return Session{}, fmt.Errorf("no session matches %q in a project matching %q (run `claude-teleport sessions` to list them)", prefix, project)
+		}
 		return Session{}, fmt.Errorf("no session matches %q (run `claude-teleport sessions` to list them)", prefix)
 	case 1:
 		return matches[0], nil
 	default:
-		var ids []string
+		var lines []string
 		for _, m := range matches {
-			ids = append(ids, m.ShortID())
+			proj := m.ProjectPath
+			if proj == "" {
+				proj = m.Folder
+			}
+			lines = append(lines, fmt.Sprintf("%s  %s", m.ShortID(), proj))
 		}
-		return Session{}, fmt.Errorf("%q matches %d sessions (%s); use more characters", prefix, len(matches), strings.Join(ids, ", "))
+		return Session{}, fmt.Errorf("%q matches %d sessions; narrow it with --project:\n  %s", prefix, len(matches), strings.Join(lines, "\n  "))
 	}
+}
+
+// sessionInProject reports whether a session's project path or encoded folder
+// contains needle (case-insensitive).
+func sessionInProject(s Session, needle string) bool {
+	needle = strings.ToLower(needle)
+	return strings.Contains(strings.ToLower(s.ProjectPath), needle) ||
+		strings.Contains(strings.ToLower(s.Folder), needle)
 }
 
 // LastSession returns the most recently modified session, if any exist.
@@ -195,9 +216,11 @@ func cleanTitle(s string) string {
 		s = s[:i]
 	}
 	s = strings.TrimSpace(s)
+	// Truncate by runes, not bytes, so a multibyte character at the cut point
+	// is never sliced in half into a garbled glyph.
 	const max = 60
-	if len(s) > max {
-		s = s[:max] + "..."
+	if r := []rune(s); len(r) > max {
+		s = string(r[:max]) + "..."
 	}
 	return s
 }
