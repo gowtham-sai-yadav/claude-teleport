@@ -21,6 +21,7 @@ type ShareOptions struct {
 	Version       string
 	Out           string
 	SessionPrefix string // id prefix to share (ignored if Last)
+	Project       string // optional project filter to disambiguate a shared id
 	Last          bool   // share the most recent session instead
 	WithContext   bool   // also include the project's memory files
 	Redact        bool   // scrub likely secrets before packing
@@ -67,7 +68,7 @@ func RunShare(opts ShareOptions) error {
 	if opts.Last {
 		sess, err = claudedir.LastSession(p)
 	} else {
-		sess, err = claudedir.FindSession(p, opts.SessionPrefix)
+		sess, err = claudedir.FindSession(p, opts.SessionPrefix, opts.Project)
 	}
 	if err != nil {
 		return err
@@ -116,12 +117,20 @@ func RunShare(opts ShareOptions) error {
 		title = "(untitled session)"
 	}
 
+	// Total uncompressed size of everything being packed (transcript, sidecar,
+	// and memory if included), so the preview reflects what actually leaves the
+	// machine rather than just the transcript.
+	var contentBytes int64
+	for _, it := range items {
+		contentBytes += int64(len(it.data))
+	}
+
 	preview := SharePreview{
 		Title:         title,
 		ShortID:       sess.ShortID(),
 		ProjectPath:   sess.ProjectPath,
 		Messages:      sess.Messages,
-		Bytes:         sess.Size,
+		Bytes:         contentBytes,
 		SecretsMasked: masked,
 		WithContext:   includeMemory,
 		Redact:        opts.Redact,
@@ -193,7 +202,7 @@ func RunShare(opts ShareOptions) error {
 }
 
 func printShareResult(res ShareResult, redacted bool) {
-	fmt.Printf("Shared session %s -> %s (%.1f MB)\n", shortID(res.SessionID), res.Path, float64(res.Bytes)/(1024*1024))
+	fmt.Printf("Shared session %s -> %s (%s)\n", shortID(res.SessionID), res.Path, HumanSize(res.Bytes))
 	if redacted {
 		fmt.Printf("Masked %d likely secret(s). This is best effort - open the file if you want to be sure.\n", res.SecretsMasked)
 	} else {
@@ -208,6 +217,26 @@ func shortID(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+// HumanSize formats a byte count compactly, scaling the unit so small files
+// read as "4 KB" instead of "0.0 MB". Bytes are shown as a whole number.
+func HumanSize(n int64) string {
+	const (
+		kb = 1024
+		mb = 1024 * kb
+		gb = 1024 * mb
+	)
+	switch {
+	case n < kb:
+		return fmt.Sprintf("%d B", n)
+	case n < mb:
+		return fmt.Sprintf("%.1f KB", float64(n)/kb)
+	case n < gb:
+		return fmt.Sprintf("%.1f MB", float64(n)/mb)
+	default:
+		return fmt.Sprintf("%.1f GB", float64(n)/gb)
+	}
 }
 
 func maybeScrub(b []byte, do bool) ([]byte, int) {

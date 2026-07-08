@@ -39,6 +39,7 @@ exactly where you left off.
 
 - [Why you need it](#why-you-need-it)
 - [Install](#install)
+- [Updating](#updating)
 - [Quick start (5 minutes)](#quick-start-5-minutes)
 - [Share one session with a teammate](#share-one-session-with-a-teammate)
 - [Prefer clicking? Use the GUI](#prefer-clicking-use-the-gui)
@@ -109,6 +110,29 @@ go build -o claude-teleport .
 ```
 
 Check it works: `claude-teleport version`
+
+## Updating
+
+claude-teleport does not update itself. Nothing you install with `go install` or
+download by hand refreshes on its own, so you stay on the version you installed
+until you upgrade it yourself.
+
+If you installed with Go, run the same command again to rebuild at the newest
+release:
+
+```bash
+go install github.com/gowtham-sai-yadav/claude-teleport@latest
+```
+
+Just after a new release goes out, Go's module cache can take a few minutes to
+notice the tag. If you want a specific version right away, ask for it directly,
+for example `@v0.2.0`.
+
+If you use a downloaded binary, grab the newest one from the
+[latest release](https://github.com/gowtham-sai-yadav/claude-teleport/releases/latest)
+and replace the old file.
+
+Run `claude-teleport version` to see what you are on.
 
 ## Quick start (5 minutes)
 
@@ -234,7 +258,7 @@ claude-teleport import   <bundle> [flags]
 claude-teleport inspect  <bundle>
 claude-teleport verify   [--config-dir DIR]
 claude-teleport sessions [--project P] [--config-dir DIR]
-claude-teleport share    <session-id-prefix | --last> [--out FILE] [--with-context] [--no-redact] [--yes]
+claude-teleport share    <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]
 claude-teleport gui      [bundle] [--port N]
 ```
 
