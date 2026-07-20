@@ -42,6 +42,7 @@ exactly where you left off.
 - [Updating](#updating)
 - [Quick start (5 minutes)](#quick-start-5-minutes)
 - [Share one session with a teammate](#share-one-session-with-a-teammate)
+- [Send a session by code (no file)](#send-a-session-by-code-no-file)
 - [Prefer clicking? Use the GUI](#prefer-clicking-use-the-gui)
 - [Moving between different operating systems](#moving-between-different-operating-systems)
 - [Command reference](#command-reference)
@@ -223,6 +224,54 @@ Notes:
 - `--no-redact` sends the raw transcript unscrubbed (not recommended).
 - Your login is never included, here or anywhere.
 
+## Send a session by code (no file)
+
+Sharing a file works, but sometimes you do not want to deal with a file at all.
+`send` streams a session straight to a teammate over an end-to-end-encrypted
+connection. You read out a short code, they type it, and the session lands on
+their machine. Nothing is uploaded to any account, and no server can read it.
+
+On your machine:
+
+```bash
+claude-teleport send 8d84f55b
+```
+
+It scrubs secrets the same way `share` does, shows you what is about to leave,
+and then prints a code:
+
+```
+Give your teammate this code:
+
+    7-crossover-clockwork
+
+They run this from inside their copy of the project:
+    claude-teleport receive 7-crossover-clockwork
+
+Waiting for them to connect...
+```
+
+Your teammate drops into their own copy of the project and types it in:
+
+```bash
+cd ~/their/copy/of/the/project
+claude-teleport receive 7-crossover-clockwork
+```
+
+The session transfers, every path is rewritten for their machine, and it is
+ready for `claude --resume`. `send` takes the same `--last`, `--project`,
+`--with-context`, and `--no-redact` options as `share`.
+
+How the code stays safe: the short code is turned into a strong key with a
+password-authenticated key exchange, so the server that introduces the two of
+you never learns the code, and a guesser gets only one attempt. The transfer
+itself is end-to-end encrypted and goes directly between you when it can, or via
+a relay that only ever sees scrambled bytes when a firewall is in the way.
+
+Running your own servers: `send` and `receive` use the public magic-wormhole
+servers by default. To use your own, pass `--rendezvous` and `--relay`, or set
+`CLAUDE_TELEPORT_RENDEZVOUS` and `CLAUDE_TELEPORT_RELAY`.
+
 ## Prefer clicking? Use the GUI
 
 Not a terminal person? Run:
@@ -259,6 +308,8 @@ claude-teleport inspect  <bundle>
 claude-teleport verify   [--config-dir DIR]
 claude-teleport sessions [--project P] [--config-dir DIR]
 claude-teleport share    <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]
+claude-teleport send     <session-id-prefix | --last> [--project P] [--with-context] [--no-redact] [--rendezvous URL] [--relay HOST:PORT] [--yes]
+claude-teleport receive  <code> [--config-dir DIR] [--map OLD=NEW]... [--rendezvous URL] [--relay HOST:PORT] [--yes]
 claude-teleport gui      [bundle] [--port N]
 ```
 
@@ -280,6 +331,9 @@ claude-teleport gui      [bundle] [--port N]
 - **`sessions`** lists your conversations so you can pick one to hand off.
 - **`share`** packs a single session into a file for a teammate, masking likely
   secrets first. They import it from inside their own copy of the project.
+- **`send`** streams a single session to a teammate over an end-to-end-encrypted
+  connection identified by a short code. **`receive`** takes that code and pulls
+  it in. No file changes hands and no server can read it.
 
 ## What gets moved (and what doesn't)
 
@@ -333,13 +387,18 @@ Windows). Set `CLAUDE_CONFIG_DIR` to relocate it; claude-teleport respects that 
 
 ## Contributing
 
+For the architecture and the reasoning behind the design (path recovery,
+cross-OS rewriting, the security model, and the transfer protocol), see
+[DESIGN.md](DESIGN.md).
+
 Issues and pull requests are welcome. To develop:
 
 ```bash
-go test ./...     # run the tests
-go vet ./...      # static checks
-gofmt -l .        # should print nothing
-go run . gui      # try the wizard locally
+go test ./...                              # unit tests
+go test -tags integration ./internal/transfer/   # real send/receive over a local server
+go vet ./...                               # static checks
+gofmt -l .                                 # should print nothing
+go run . gui                               # try the wizard locally
 ```
 
 CI runs lint and tests on Linux, macOS, and Windows. Tagging `vX.Y.Z` builds and publishes
