@@ -22,9 +22,17 @@ import (
 )
 
 type Writer struct {
-	f  *os.File
+	c  io.Closer // underlying file to close, or nil for an in-memory/stream writer
 	gz *gzip.Writer
 	tw *tar.Writer
+}
+
+// NewWriter writes a bundle to any destination: a file, an in-memory buffer, or
+// a network stream. Close flushes the gzip and tar framing but leaves the
+// destination open (Create wires up closing the file it opened).
+func NewWriter(w io.Writer) *Writer {
+	gz := gzip.NewWriter(w)
+	return &Writer{gz: gz, tw: tar.NewWriter(gz)}
 }
 
 func Create(path string) (*Writer, error) {
@@ -32,9 +40,9 @@ func Create(path string) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	gz := gzip.NewWriter(f)
-	tw := tar.NewWriter(gz)
-	return &Writer{f: f, gz: gz, tw: tw}, nil
+	w := NewWriter(f)
+	w.c = f
+	return w, nil
 }
 
 func (w *Writer) AddBytes(name string, data []byte) error {
@@ -83,7 +91,10 @@ func (w *Writer) Close() error {
 	if err := w.gz.Close(); err != nil {
 		return err
 	}
-	return w.f.Close()
+	if w.c != nil {
+		return w.c.Close()
+	}
+	return nil
 }
 
 // ErrStop lets a ForEach callback end iteration early without it being treated
