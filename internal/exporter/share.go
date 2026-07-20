@@ -3,6 +3,7 @@ package exporter
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -58,10 +59,44 @@ type packItem struct {
 
 // RunShare finds one session, scrubs it, previews it, and (on confirmation)
 // writes a single-session bundle a teammate can import.
-func RunShare(opts ShareOptions) error {
+// SessionBundle is a built, in-memory single-session bundle, ready to be
+// written to a file or streamed over a transfer. Build it with PrepareShare.
+type SessionBundle struct {
+	// Name is a suggested filename, e.g. claude-teleport-session-<shortid>.tgz.
+	Name string
+	// Preview describes what the bundle contains, for a confirmation prompt.
+	Preview SharePreview
+	// Session is the resolved session this bundle was built from.
+	Session claudedir.Session
+
+	manifestJSON []byte
+	items        []packItem
+}
+
+// WriteBundle writes the bundle to w: the manifest first (so it reads fast),
+// then each file. It flushes the archive framing but does not close w. (Not
+// named WriteTo, to avoid implying the io.WriterTo contract.)
+func (b *SessionBundle) WriteBundle(w io.Writer) error {
+	bw := bundle.NewWriter(w)
+	if err := bw.AddBytes("manifest.json", b.manifestJSON); err != nil {
+		return err
+	}
+	for _, it := range b.items {
+		if err := bw.AddBytes(it.name, it.data); err != nil {
+			return err
+		}
+	}
+	return bw.Close()
+}
+
+// PrepareShare locates a session and builds its bundle in memory, scrubbing
+// secrets, without writing anything. The caller chooses the destination: a file
+// (RunShare) or a wormhole (the send command). This keeps the "what leaves your
+// machine" logic in exactly one place.
+func PrepareShare(opts ShareOptions) (*SessionBundle, error) {
 	p, err := claudedir.Locate(opts.ConfigDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var sess claudedir.Session
@@ -71,10 +106,10 @@ func RunShare(opts ShareOptions) error {
 		sess, err = claudedir.FindSession(p, opts.SessionPrefix, opts.Project)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if sess.ProjectPath == "" {
-		return fmt.Errorf("this session's project path could not be recovered, so a teammate could not re-home it; nothing was written")
+		return nil, fmt.Errorf("this session's project path could not be recovered, so a teammate could not re-home it")
 	}
 
 	prefix := "projects/" + sess.Folder + "/"
@@ -84,7 +119,7 @@ func RunShare(opts ShareOptions) error {
 	// The transcript itself.
 	tb, err := os.ReadFile(sess.File)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tb, n := maybeScrub(tb, opts.Redact)
 	masked += n
@@ -94,7 +129,7 @@ func RunShare(opts ShareOptions) error {
 	if sess.SidecarDir != "" {
 		sub, n, err := gatherTree(sess.SidecarDir, prefix+sess.ID, opts.Redact)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		masked += n
 		items = append(items, sub...)
@@ -106,7 +141,7 @@ func RunShare(opts ShareOptions) error {
 	if includeMemory {
 		mem, n, err := gatherTree(memDir, prefix+"memory", opts.Redact)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		masked += n
 		items = append(items, mem...)
@@ -117,29 +152,12 @@ func RunShare(opts ShareOptions) error {
 		title = "(untitled session)"
 	}
 
-	// Total uncompressed size of everything being packed (transcript, sidecar,
-	// and memory if included), so the preview reflects what actually leaves the
+	// Total uncompressed size of everything packed (transcript, sidecar, and
+	// memory if included), so the preview reflects what actually leaves the
 	// machine rather than just the transcript.
 	var contentBytes int64
 	for _, it := range items {
 		contentBytes += int64(len(it.data))
-	}
-
-	preview := SharePreview{
-		Title:         title,
-		ShortID:       sess.ShortID(),
-		ProjectPath:   sess.ProjectPath,
-		Messages:      sess.Messages,
-		Bytes:         contentBytes,
-		SecretsMasked: masked,
-		WithContext:   includeMemory,
-		Redact:        opts.Redact,
-	}
-	if !opts.AssumeYes && opts.Confirm != nil {
-		if !opts.Confirm(preview) {
-			fmt.Println("Aborted - nothing was written.")
-			return nil
-		}
 	}
 
 	man := manifest.Manifest{
@@ -162,38 +180,67 @@ func RunShare(opts ShareOptions) error {
 	}
 	mb, err := json.MarshalIndent(man, "", "  ")
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	out := opts.Out
-	if out == "" {
-		out = fmt.Sprintf("claude-teleport-session-%s.tgz", sess.ShortID())
+	name := opts.Out
+	if name == "" {
+		name = fmt.Sprintf("claude-teleport-session-%s.tgz", sess.ShortID())
 	}
 
-	w, err := bundle.Create(out)
+	return &SessionBundle{
+		Name:    name,
+		Session: sess,
+		Preview: SharePreview{
+			Title:         title,
+			ShortID:       sess.ShortID(),
+			ProjectPath:   sess.ProjectPath,
+			Messages:      sess.Messages,
+			Bytes:         contentBytes,
+			SecretsMasked: masked,
+			WithContext:   includeMemory,
+			Redact:        opts.Redact,
+		},
+		manifestJSON: mb,
+		items:        items,
+	}, nil
+}
+
+// RunShare builds a single-session bundle, previews it, and on confirmation
+// writes it to a file for a teammate to import.
+func RunShare(opts ShareOptions) error {
+	b, err := PrepareShare(opts)
 	if err != nil {
 		return err
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			w.Close()
-		}
-	}()
-	if err := w.AddBytes("manifest.json", mb); err != nil {
-		return err
-	}
-	for _, it := range items {
-		if err := w.AddBytes(it.name, it.data); err != nil {
-			return err
+	if !opts.AssumeYes && opts.Confirm != nil {
+		if !opts.Confirm(b.Preview) {
+			fmt.Println("Aborted - nothing was written.")
+			return nil
 		}
 	}
-	if err := w.Close(); err != nil {
-		return err
-	}
-	committed = true
 
-	res := ShareResult{Path: out, SessionID: sess.ID, ProjectPath: sess.ProjectPath, Messages: sess.Messages, SecretsMasked: masked}
+	out := b.Name
+	f, err := os.Create(out)
+	if err != nil {
+		return err
+	}
+	if err := b.WriteBundle(f); err != nil {
+		f.Close()
+		os.Remove(out)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	res := ShareResult{
+		Path:          out,
+		SessionID:     b.Session.ID,
+		ProjectPath:   b.Session.ProjectPath,
+		Messages:      b.Session.Messages,
+		SecretsMasked: b.Preview.SecretsMasked,
+	}
 	if fi, err := os.Stat(out); err == nil {
 		res.Bytes = fi.Size()
 	}

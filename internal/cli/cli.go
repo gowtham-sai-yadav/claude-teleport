@@ -3,12 +3,17 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
@@ -16,10 +21,11 @@ import (
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/importer"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/transfer"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/webui"
 )
 
-const Version = "0.2.1"
+const Version = "0.3.0"
 
 func Run(args []string) error {
 	if len(args) == 0 {
@@ -39,6 +45,10 @@ func Run(args []string) error {
 		return runSessions(args[1:])
 	case "share":
 		return runShare(args[1:])
+	case "send":
+		return runSend(args[1:])
+	case "receive":
+		return runReceive(args[1:])
 	case "gui":
 		return runGUI(args[1:])
 	case "version", "-v", "--version":
@@ -61,14 +71,17 @@ func printHelp() {
 		"  claude-teleport verify  [--config-dir DIR]\n" +
 		"  claude-teleport sessions [--project P] [--config-dir DIR]\n" +
 		"  claude-teleport share   <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
+		"  claude-teleport send    <session-id-prefix | --last> [--project P] [--with-context] [--no-redact] [--yes]\n" +
+		"  claude-teleport receive <code> [--config-dir DIR] [--map OLD=NEW]... [--yes]\n" +
 		"  claude-teleport gui     [bundle] [--port N]\n\n" +
 		"EXPORT runs on the OLD machine and writes a portable bundle.\n" +
 		"IMPORT runs on the NEW machine and restores it, translating paths for this OS\n" +
 		"(Linux, macOS, or Windows - drive letters and backslashes handled).\n" +
 		"SESSIONS lists your conversations so you can find one to hand off. SHARE packs a\n" +
-		"single session into a file for a teammate (secrets scrubbed first); they import it\n" +
-		"from inside their copy of the project. GUI opens a point-and-click wizard. VERIFY\n" +
-		"checks migrated sessions are resume-ready. Your login is never copied - log in once.\n")
+		"single session into a file for a teammate (secrets scrubbed first). SEND does the\n" +
+		"same but streams it over an end-to-end-encrypted connection: you read out a short\n" +
+		"code and they RECEIVE it, no file to move. GUI opens a point-and-click wizard.\n" +
+		"VERIFY checks migrated sessions are resume-ready. Your login is never copied.\n")
 }
 
 func runExport(args []string) error {
@@ -267,6 +280,218 @@ func confirmShare(preview exporter.SharePreview) bool {
 		fmt.Println("  secrets : NOT scrubbed (--no-redact) - the raw transcript will be shared")
 	}
 	return confirm("Write this file?")
+}
+
+// runSend builds a single-session bundle and streams it to a teammate over an
+// end-to-end-encrypted wormhole, identified by a short spoken code. No file
+// changes hands.
+func runSend(args []string) error {
+	fs := flag.NewFlagSet("send", flag.ContinueOnError)
+	cfg := fs.String("config-dir", "", "override the Claude config dir")
+	last := fs.Bool("last", false, "send your most recent session")
+	project := fs.String("project", "", "disambiguate by project when the same id exists in more than one")
+	withContext := fs.Bool("with-context", false, "also include the project's memory/context files")
+	noRedact := fs.Bool("no-redact", false, "do NOT scrub secrets before sending (not recommended)")
+	yes := fs.Bool("yes", false, "skip the confirmation prompt")
+	rendezvous := fs.String("rendezvous", envOr("CLAUDE_TELEPORT_RENDEZVOUS", ""), "rendezvous server URL (default: public magic-wormhole)")
+	relay := fs.String("relay", envOr("CLAUDE_TELEPORT_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
+	words := fs.Int("code-words", 2, "number of words in the transfer code")
+	timeout := fs.Duration("timeout", 15*time.Minute, "give up if the peer does not connect within this time")
+	pos, err := parseInterleaved(fs, args)
+	if err != nil {
+		return err
+	}
+	prefix := ""
+	if len(pos) > 0 {
+		prefix = pos[0]
+	}
+	if prefix == "" && !*last {
+		return fmt.Errorf("usage: claude-teleport send <session-id-prefix | --last>")
+	}
+
+	b, err := exporter.PrepareShare(exporter.ShareOptions{
+		ConfigDir:     *cfg,
+		Version:       Version,
+		SessionPrefix: prefix,
+		Project:       *project,
+		Last:          *last,
+		WithContext:   *withContext,
+		Redact:        !*noRedact,
+	})
+	if err != nil {
+		return err
+	}
+	if !*yes && !confirmSend(b.Preview) {
+		fmt.Println("Aborted - nothing was sent.")
+		return nil
+	}
+
+	// Build the bundle in memory so we can stream it straight into the wormhole.
+	var buf bytes.Buffer
+	if err := b.WriteBundle(&buf); err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
+
+	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, CodeWords: *words}
+	fmt.Println("Preparing a secure transfer...")
+	err = transfer.Send(ctx, tcfg, b.Name, bytes.NewReader(buf.Bytes()),
+		func(code string) {
+			fmt.Printf("\nGive your teammate this code:\n\n    %s\n\n", code)
+			fmt.Println("They run this from inside their copy of the project:")
+			fmt.Printf("    claude-teleport receive %s\n\n", code)
+			fmt.Println("Waiting for them to connect... (press Ctrl-C to cancel)")
+		},
+		progressPrinter("Sending"),
+	)
+	if err != nil {
+		return fmt.Errorf("send failed: %w", err)
+	}
+	fmt.Println("\nDone. The session is on your teammate's machine.")
+	return nil
+}
+
+// runReceive pulls a session bundle over a wormhole using the code, then hands
+// it to the normal importer (which attaches it to the current directory).
+func runReceive(args []string) error {
+	fs := flag.NewFlagSet("receive", flag.ContinueOnError)
+	cfg := fs.String("config-dir", "", "override the target Claude config dir")
+	overwrite := fs.Bool("overwrite", false, "overwrite existing files (backs up first)")
+	deep := fs.Bool("deep", false, "rewrite old paths everywhere in transcripts, not just cwd")
+	yes := fs.Bool("yes", false, "skip the import confirmation prompt")
+	home := fs.String("target-home", "", "override the target home directory")
+	tos := fs.String("target-os", "", "render paths for this OS: linux|darwin|windows")
+	rendezvous := fs.String("rendezvous", envOr("CLAUDE_TELEPORT_RENDEZVOUS", ""), "rendezvous server URL (default: public magic-wormhole)")
+	relay := fs.String("relay", envOr("CLAUDE_TELEPORT_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
+	timeout := fs.Duration("timeout", 15*time.Minute, "give up if the transfer does not start within this time")
+	var maps multiFlag
+	fs.Var(&maps, "map", "remap OLD=NEW path prefix (repeatable)")
+	pos, err := parseInterleaved(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) < 1 {
+		return fmt.Errorf("usage: claude-teleport receive <code>")
+	}
+	code := pos[0]
+	parsedMaps, err := parseMaps(maps)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
+
+	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay}
+	fmt.Println("Connecting...")
+	in, err := transfer.Receive(ctx, tcfg, code)
+	if err != nil {
+		return fmt.Errorf("receive failed: %w", err)
+	}
+
+	// Stream to a temp bundle, capped so a peer that lies about the size cannot
+	// fill the disk. The importer then treats it exactly like a shared file.
+	tmp, err := os.CreateTemp("", "claude-teleport-recv-*.tgz")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	const maxBytes = 2 << 30 // 2 GiB hard ceiling
+	if _, err := copyCapped(tmp, in, in.Bytes, maxBytes, progressPrinter("Receiving")); err != nil {
+		tmp.Close()
+		return fmt.Errorf("receive failed: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	fmt.Println()
+
+	return importer.Run(importer.Options{
+		Bundle:     tmpPath,
+		TargetHome: *home,
+		TargetOS:   *tos,
+		ConfigDir:  *cfg,
+		Overwrite:  *overwrite,
+		Deep:       *deep,
+		AssumeYes:  *yes,
+		Maps:       parsedMaps,
+	})
+}
+
+// confirmSend shows what is about to leave the machine over the network and
+// asks to proceed. It mirrors confirmShare but names the transport.
+func confirmSend(preview exporter.SharePreview) bool {
+	fmt.Println("About to send ONE session over an end-to-end-encrypted connection. Read it first:")
+	fmt.Printf("  session : %s  (%s)\n", preview.Title, preview.ShortID)
+	fmt.Printf("  project : %s\n", preview.ProjectPath)
+	fmt.Printf("  content : %d message(s), %s\n", preview.Messages, exporter.HumanSize(preview.Bytes))
+	if preview.WithContext {
+		fmt.Println("  context : project memory INCLUDED (--with-context)")
+	} else {
+		fmt.Println("  context : conversation only (memory not included)")
+	}
+	if preview.Redact {
+		fmt.Printf("  secrets : %d likely secret(s) masked (best effort, not a guarantee)\n", preview.SecretsMasked)
+	} else {
+		fmt.Println("  secrets : NOT scrubbed (--no-redact) - the raw transcript will be sent")
+	}
+	return confirm("Send it?")
+}
+
+// progressPrinter returns a progress callback that rewrites a single status
+// line on stderr.
+func progressPrinter(label string) transfer.Progress {
+	return func(done, total int64) {
+		if total <= 0 {
+			fmt.Fprintf(os.Stderr, "\r%s %s   ", label, exporter.HumanSize(done))
+			return
+		}
+		pct := float64(done) / float64(total) * 100
+		fmt.Fprintf(os.Stderr, "\r%s %3.0f%% (%s / %s)   ", label, pct, exporter.HumanSize(done), exporter.HumanSize(total))
+	}
+}
+
+// copyCapped copies src to dst, reporting progress and refusing to write more
+// than limit bytes (a peer controls the offered size, so it cannot be trusted).
+func copyCapped(dst io.Writer, src io.Reader, total, limit int64, prog transfer.Progress) (int64, error) {
+	buf := make([]byte, 32*1024)
+	var done int64
+	for {
+		n, rerr := src.Read(buf)
+		if n > 0 {
+			if done+int64(n) > limit {
+				return done, fmt.Errorf("incoming bundle exceeds the %s safety cap", exporter.HumanSize(limit))
+			}
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				return done, werr
+			}
+			done += int64(n)
+			if prog != nil {
+				prog(done, total)
+			}
+		}
+		if rerr == io.EOF {
+			return done, nil
+		}
+		if rerr != nil {
+			return done, rerr
+		}
+	}
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
 
 // confirm asks a yes/no question on the terminal (default no).

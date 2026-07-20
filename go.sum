@@ -1,0 +1,14 @@
+github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
+github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+github.com/klauspost/compress v1.17.11 h1:In6xLpyWOi1+C7tXUUWv2ot1QvBjxevKAaI6IXrJmUc=
+github.com/klauspost/compress v1.17.11/go.mod h1:pMDklpSncoRMuLFrf1W9Ss9KT+0rH90U12bZKk7uwG0=
+github.com/psanford/wormhole-william v1.0.8 h1:P8s4eQVzZ19cw9N/+HndP6w9lW11UrIUz/F4XvJJu4s=
+github.com/psanford/wormhole-william v1.0.8/go.mod h1:vMkLY+1bamCEnxfzruo06QqtY1fbrL3PibfQbyv4RgI=
+golang.org/x/crypto v0.31.0 h1:ihbySMvVjLAeSH1IbfcRTkD/iNscyz8rGzjF/E5hV6U=
+golang.org/x/crypto v0.31.0/go.mod h1:kDsLvtWBEx7MV9tJOj9bnXsPbxwJQ6csT/x4KIN4Ssk=
+golang.org/x/sys v0.28.0 h1:Fksou7UEQUWlKvIdsqzJmUmCX3cZuD2+P3XyyzwMhlA=
+golang.org/x/sys v0.28.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
+nhooyr.io/websocket v1.8.17 h1:KEVeLJkUywCKVsnLIDlD/5gtayKp8VoCkksHCGGfT9Y=
+nhooyr.io/websocket v1.8.17/go.mod h1:rN9OFWIUwuxg4fR5tELlYC04bXYowCP9GX47ivo2l+c=
+salsa.debian.org/vasudev/gospake2 v0.0.0-20210510093858-d91629950ad1 h1:m65DhEZR/5zbgOGW4sQGDZmIwro+xBGIBQGWm43SlxM=
+salsa.debian.org/vasudev/gospake2 v0.0.0-20210510093858-d91629950ad1/go.mod h1:soKzqXBAtqHTODjyA0VzH2iERtpzN1w65eZUfetn2cQ=
