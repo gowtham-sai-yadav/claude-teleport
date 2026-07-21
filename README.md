@@ -84,6 +84,14 @@ irm https://gowthamsai.in/install.ps1 | iex
 This grabs the right prebuilt binary for your machine, verifies its SHA-256
 checksum, and puts it on your PATH. That is all you need.
 
+### Homebrew (macOS, Linux)
+
+```bash
+brew install gowtham-sai-yadav/tap/claude-teleport
+```
+
+Upgrade later with `brew upgrade claude-teleport`.
+
 Prefer to do it yourself? Any of the options below also work.
 
 ### Download a ready-made binary (no tools needed)
