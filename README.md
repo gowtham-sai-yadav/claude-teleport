@@ -67,9 +67,26 @@ names and rewrites the in-file paths for the new machine.
 
 ## Install
 
-Pick whichever you like.
+### Quickest: one line
 
-### Option A - Download a ready-made binary (no tools needed)
+**macOS and Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gowtham-sai-yadav/claude-teleport/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/gowtham-sai-yadav/claude-teleport/main/install.ps1 | iex
+```
+
+This grabs the right prebuilt binary for your machine, verifies its SHA-256
+checksum, and puts it on your PATH. That is all you need.
+
+Prefer to do it yourself? Any of the options below also work.
+
+### Download a ready-made binary (no tools needed)
 
 1. Go to the [**latest release**](https://github.com/gowtham-sai-yadav/claude-teleport/releases/latest).
 2. Download the file for your computer:
@@ -86,7 +103,7 @@ Pick whichever you like.
    ```
    On Windows, rename it to `claude-teleport.exe` and keep it in a folder you can find.
 
-### Option B - With Go installed
+### With Go installed
 
 ```bash
 go install github.com/gowtham-sai-yadav/claude-teleport@latest
@@ -102,7 +119,7 @@ echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 
 On Windows, add `%USERPROFILE%\go\bin` to your PATH via System Settings.
 
-### Option C - From source
+### From source
 
 ```bash
 git clone https://github.com/gowtham-sai-yadav/claude-teleport
