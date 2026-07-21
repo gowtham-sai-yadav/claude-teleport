@@ -1,7 +1,8 @@
 name: Release
 
-# Tag a commit (e.g. `git tag v0.1.0 && git push --tags`) to build binaries
-# for every OS/arch and attach them to a GitHub Release.
+# Tag a commit (e.g. `git tag v0.3.1 && git push --tags`) to build every
+# OS/arch, publish a GitHub Release with checksums, and update the Homebrew tap
+# and the .deb/.rpm packages, all via GoReleaser (see .goreleaser.yaml).
 on:
   push:
     tags: ['v*']
@@ -14,25 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # GoReleaser needs full history and tags
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Cross-compile binaries
-        run: |
-          mkdir -p dist
-          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
-            export GOOS=${t%/*} GOARCH=${t#*/} CGO_ENABLED=0
-            out=claude-teleport-${GOOS}-${GOARCH}
-            [ "$GOOS" = windows ] && out=${out}.exe
-            echo "building $out"
-            go build -trimpath -ldflags "-s -w" -o "dist/$out" .
-          done
-          (cd dist && sha256sum * > SHA256SUMS.txt)
-
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
+      - uses: goreleaser/goreleaser-action@v6
         with:
-          files: dist/*
-          generate_release_notes: true
+          distribution: goreleaser
+          version: '~> v2'
+          args: release --clean
+        env:
+          # GITHUB_TOKEN publishes the release in this repo.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # TAP_GITHUB_TOKEN pushes the formula to the homebrew-tap repo. Set it
+          # in repo Settings > Secrets. Without it the release and binaries still
+          # publish; only the Homebrew tap update is skipped/failed.
+          TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
