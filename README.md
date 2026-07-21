@@ -2,339 +2,173 @@
 
 # claude-teleport
 
-**Move your [Claude Code](https://claude.com/claude-code) history to a new computer - sessions, memory, and settings - with every path fixed automatically.**
+**Move your [Claude Code](https://claude.com/claude-code) history to a new computer, with every path fixed automatically.**
 
-Linux · macOS · Windows, in any direction.
+Sessions, memory, and settings. Linux, macOS, and Windows, in any direction.
 
 [![CI](https://github.com/gowtham-sai-yadav/claude-teleport/actions/workflows/ci.yml/badge.svg)](https://github.com/gowtham-sai-yadav/claude-teleport/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/gowtham-sai-yadav/claude-teleport?include_prereleases&sort=semver)](https://github.com/gowtham-sai-yadav/claude-teleport/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.26-00ADD8.svg)](go.mod)
+[![Release](https://img.shields.io/github/v/release/gowtham-sai-yadav/claude-teleport?sort=semver)](https://github.com/gowtham-sai-yadav/claude-teleport/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/gowtham-sai-yadav/claude-teleport)](https://goreportcard.com/report/github.com/gowtham-sai-yadav/claude-teleport)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-<img src="docs/demo.gif" alt="claude-teleport demo: migrate your Claude Code history to a new machine" width="820">
+<img src="docs/demo.gif" alt="claude-teleport demo" width="820">
 
 </div>
 
 ---
 
-If you live in Claude Code, losing your sessions feels like losing part of your workspace.
+When I moved from my Linux laptop to a new Mac, I wanted my Claude Code history to come with me: the sessions, the memory, the project context. Copying the `.claude` folder by hand does not work, because Claude Code ties every session to the exact path your project lived at, and those paths change on a new machine.
 
-When I moved from my Linux laptop to a new Mac, I wanted to bring all of it with me: my
-sessions, conversation history, memory, and project context. There was no clean way to do it.
-Copying the files by hand is tedious, and because project paths change between machines,
-nothing just works when you get there.
-
-So I built claude-teleport. It packs your whole Claude Code setup into one file on the old
-machine and restores it on the new one, rewriting every path so your conversations resume
-exactly where you left off.
-
-```
-┌─────────────┐    export     ┌───────────────┐   import (paths fixed)   ┌─────────────┐
-│ OLD machine │ ────────────▶ │ one .tgz file │ ───────────────────────▶ │ NEW machine │
-└─────────────┘               └───────────────┘                          └─────────────┘
-```
-
-## Contents
-
-- [Why you need it](#why-you-need-it)
-- [Install](#install)
-- [Updating](#updating)
-- [Quick start (5 minutes)](#quick-start-5-minutes)
-- [Share one session with a teammate](#share-one-session-with-a-teammate)
-- [Send a session by code (no file)](#send-a-session-by-code-no-file)
-- [Prefer clicking? Use the GUI](#prefer-clicking-use-the-gui)
-- [Moving between different operating systems](#moving-between-different-operating-systems)
-- [Command reference](#command-reference)
-- [What gets moved (and what doesn't)](#what-gets-moved-and-what-doesnt)
-- [Is it safe?](#is-it-safe)
-- [How it works](#how-it-works)
-- [FAQ](#faq)
-- [Contributing](#contributing)
-
-## Why you need it
-
-Copying the `~/.claude` folder by hand **does not work**, for two reasons:
-
-1. Sessions live in folders named after each project's full path, with the slashes turned into
-   dashes (`/home/you/app` → `-home-you-app`). That naming is *lossy* - slashes, dots,
-   underscores and spaces all become `-` - so you can't reconstruct the real path, and the
-   name is wrong on a machine with a different username or OS anyway.
-2. The session files have the **old machine's paths written inside them**.
-
-claude-teleport handles both: it records each project's true path, then rebuilds the folder
-names and rewrites the in-file paths for the new machine.
+claude-teleport packs your whole setup into one file and restores it on the new machine, rewriting every path so your conversations resume right where you left off.
 
 ## Install
 
-### Quickest: one line
-
-**macOS and Linux:**
+macOS and Linux:
 
 ```bash
 curl -fsSL https://gowthamsai.in/install.sh | sh
 ```
 
-**Windows (PowerShell):**
-
-```powershell
-irm https://gowthamsai.in/install.ps1 | iex
-```
-
-This grabs the right prebuilt binary for your machine, verifies its SHA-256
-checksum, and puts it on your PATH. That is all you need.
-
-### Homebrew (macOS, Linux)
+With Homebrew:
 
 ```bash
 brew install gowtham-sai-yadav/tap/claude-teleport
 ```
 
-Upgrade later with `brew upgrade claude-teleport`.
+Windows (PowerShell):
 
-Prefer to do it yourself? Any of the options below also work.
+```powershell
+irm https://gowthamsai.in/install.ps1 | iex
+```
 
-### Download a ready-made binary (no tools needed)
+Each one fetches the right prebuilt binary, verifies its checksum, and puts it on your PATH. Confirm with `claude-teleport version`.
 
-1. Go to the [**latest release**](https://github.com/gowtham-sai-yadav/claude-teleport/releases/latest).
-2. Download the file for your computer:
-   | Your machine | File |
-   |---|---|
-   | macOS (Apple Silicon) | `claude-teleport-darwin-arm64` |
-   | macOS (Intel) | `claude-teleport-darwin-amd64` |
-   | Linux | `claude-teleport-linux-amd64` |
-   | Windows | `claude-teleport-windows-amd64.exe` |
-3. On macOS/Linux, make it runnable and put it on your PATH:
-   ```bash
-   chmod +x claude-teleport-*            # allow it to run
-   sudo mv claude-teleport-* /usr/local/bin/claude-teleport
-   ```
-   On Windows, rename it to `claude-teleport.exe` and keep it in a folder you can find.
+<details>
+<summary>Other ways: Go, direct download, from source</summary>
 
-### With Go installed
+**With Go:**
 
 ```bash
 go install github.com/gowtham-sai-yadav/claude-teleport@latest
 ```
 
-This drops the binary in Go's bin directory (`$(go env GOPATH)/bin`, usually `~/go/bin`).
-If `claude-teleport: command not found`, that directory is not on your PATH yet. Add it:
+This installs into `$(go env GOPATH)/bin` (usually `~/go/bin`). If the command is not found afterward, that folder is not on your PATH yet: `echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc`.
 
-```bash
-# macOS / Linux (zsh)
-echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
-```
+**Direct download:** grab the file for your machine from the [latest release](https://github.com/gowtham-sai-yadav/claude-teleport/releases/latest) (`...-darwin-arm64` for Apple Silicon, `-darwin-amd64` for Intel Macs, `-linux-amd64`, or `-windows-amd64.exe`), then on macOS/Linux `chmod +x` it and move it onto your PATH.
 
-On Windows, add `%USERPROFILE%\go\bin` to your PATH via System Settings.
-
-### From source
+**From source:**
 
 ```bash
 git clone https://github.com/gowtham-sai-yadav/claude-teleport
-cd claude-teleport
-go build -o claude-teleport .
+cd claude-teleport && go build -o claude-teleport .
 ```
 
-Check it works: `claude-teleport version`
+</details>
 
-## Updating
+## Move to a new machine
 
-The simplest way is to let the tool update itself:
+Two commands, one on each computer.
+
+**On the old machine**, pack everything into a file:
 
 ```bash
-claude-teleport update
+claude-teleport export
 ```
 
-It checks GitHub for a newer release, and if there is one, downloads the build
-for your machine, verifies its checksum, and replaces the binary in place. Use
-`claude-teleport update --check` to only see whether you are behind.
+Copy the file it creates to the new machine any way you like: AirDrop, a USB stick, `scp`.
 
-If you would rather do it by hand, whatever way you installed still works:
+**On the new machine**, install Claude Code and sign in once, then restore:
 
 ```bash
-# installed with Go
-go install github.com/gowtham-sai-yadav/claude-teleport@latest
-# installed with the script (macOS/Linux)
-curl -fsSL https://gowthamsai.in/install.sh | sh
-# installed with Homebrew
-brew upgrade claude-teleport
+claude-teleport import claude-teleport-backup-*.tgz
 ```
 
-Just after a new release goes out, Go's module cache can take a few minutes to
-notice the tag. If you want a specific version right away, ask for it directly,
-for example `@v0.2.0`.
+It shows you every project and where it will land, asks you to confirm, fixes the paths, and checks your sessions are resume-ready. Add `--dry-run` to preview without writing anything, and `--map /old/path=/new/path` if it guesses a location wrong.
 
-If you use a downloaded binary, grab the newest one from the
-[latest release](https://github.com/gowtham-sai-yadav/claude-teleport/releases/latest)
-and replace the old file.
+Then open a project and carry on:
 
-Run `claude-teleport version` to see what you are on.
+```bash
+cd ~/path/to/your/project
+claude --resume
+```
 
-## Quick start (5 minutes)
+> Your login does not transfer, on purpose. Credentials are locked to each machine, so just sign in once on the new one.
 
-You'll run two commands total - one on each computer.
+## Share a single session
 
-### On the OLD computer
-
-1. Open a terminal and run:
-   ```bash
-   claude-teleport export
-   ```
-2. It prints the name of a file it created, e.g.
-   `claude-teleport-backup-20260628-120000.tgz`.
-3. Copy that one file to the new computer - AirDrop, a USB stick, `scp`, Google Drive,
-   whatever is easiest.
-
-### On the NEW computer
-
-4. **Install Claude Code and sign in once** (so it sets up your account), then close it.
-5. Preview what will happen - this writes nothing:
-   ```bash
-   claude-teleport import claude-teleport-backup-20260628-120000.tgz --dry-run
-   ```
-   You'll see a table of every project and where it will move to. claude-teleport guesses the
-   new location from your current home folder. If a guess is wrong, fix it with `--map`:
-   ```bash
-   claude-teleport import bundle.tgz --map /home/oldname=/Users/newname --dry-run
-   ```
-6. Happy with the preview? Run it for real:
-   ```bash
-   claude-teleport import claude-teleport-backup-20260628-120000.tgz
-   ```
-   It asks for confirmation, copies everything into place, fixes the paths, and finishes with
-   a check that your sessions are resume-ready.
-7. Put your actual project folders where the table said they'd go (e.g. clone your repos into
-   `~/Desktop/...`). Then open one and resume:
-   ```bash
-   cd ~/Desktop/my-project
-   claude --resume
-   ```
-
-That's it. Your old conversations are there.
-
-> **One thing that does not transfer: your login.** That's on purpose - credentials are locked
-> to each machine and should never travel in a file. Just sign in to Claude Code once on the
-> new computer.
-
-## Share one session with a teammate
-
-Moving your whole setup is one thing. Sometimes you just want to hand a single
-conversation to a teammate so they can pick up exactly where you left off, with
-all your context intact.
-
-First, find the session you want:
+Hand one conversation to a teammate, with all its context intact. Find the session first:
 
 ```bash
 claude-teleport sessions
 ```
 
-You get a list with a short ID, when it was last active, how many messages it
-has, the project, and the first thing you asked, so it is easy to spot the right
-one. Then pack it into a file:
+Then send it one of two ways.
+
+**As a file:**
 
 ```bash
-claude-teleport share 8d84f55b
+claude-teleport share <id>
 ```
 
-Before it writes anything, it shows you exactly what is about to leave your
-machine and asks you to confirm. It **scans for and masks likely secrets**
-(API keys, tokens, private keys, `password=...`) first. This is best effort, not
-a guarantee, so glance at what you are sending if it matters.
+They import it from inside their copy of the project with `claude-teleport import <file>`.
 
-Your teammate drops into their own copy of the project and imports it:
+**Straight across, by code** (no file to move, nothing uploaded anywhere):
 
 ```bash
-cd ~/their/copy/of/the/project
-claude-teleport import claude-teleport-session-8d84f55b.tgz
+claude-teleport send <id>
 ```
 
-The session attaches to whatever directory they are standing in, with every path
-rewritten for their machine, so `claude --resume` picks it up right away.
+You read out the short code it prints; they run `claude-teleport receive <code>` from their project. The transfer is end-to-end encrypted, so no server can read it.
 
-Notes:
+Either way, likely secrets (keys, tokens, passwords) are scrubbed before anything leaves your machine, and your login is never included. `--last` picks your most recent session, and `--with-context` also includes the project's memory files.
 
-- Only the conversation is shared by default. Add `--with-context` to include the
-  project's memory files too.
-- `--last` shares your most recent session without needing the ID.
-- `--no-redact` sends the raw transcript unscrubbed (not recommended).
-- Your login is never included, here or anywhere.
-
-## Send a session by code (no file)
-
-Sharing a file works, but sometimes you do not want to deal with a file at all.
-`send` streams a session straight to a teammate over an end-to-end-encrypted
-connection. You read out a short code, they type it, and the session lands on
-their machine. Nothing is uploaded to any account, and no server can read it.
-
-On your machine:
-
-```bash
-claude-teleport send 8d84f55b
-```
-
-It scrubs secrets the same way `share` does, shows you what is about to leave,
-and then prints a code:
-
-```
-Give your teammate this code:
-
-    7-crossover-clockwork
-
-They run this from inside their copy of the project:
-    claude-teleport receive 7-crossover-clockwork
-
-Waiting for them to connect...
-```
-
-Your teammate drops into their own copy of the project and types it in:
-
-```bash
-cd ~/their/copy/of/the/project
-claude-teleport receive 7-crossover-clockwork
-```
-
-The session transfers, every path is rewritten for their machine, and it is
-ready for `claude --resume`. `send` takes the same `--last`, `--project`,
-`--with-context`, and `--no-redact` options as `share`.
-
-How the code stays safe: the short code is turned into a strong key with a
-password-authenticated key exchange, so the server that introduces the two of
-you never learns the code, and a guesser gets only one attempt. The transfer
-itself is end-to-end encrypted and goes directly between you when it can, or via
-a relay that only ever sees scrambled bytes when a firewall is in the way.
-
-Running your own servers: `send` and `receive` use the public magic-wormhole
-servers by default. To use your own, pass `--rendezvous` and `--relay`, or set
-`CLAUDE_TELEPORT_RENDEZVOUS` and `CLAUDE_TELEPORT_RELAY`.
-
-## Prefer clicking? Use the GUI
-
-Not a terminal person? Run:
+## Prefer clicking?
 
 ```bash
 claude-teleport gui
 ```
 
-Your browser opens a small wizard where you pick the bundle file, confirm where each project
-should go, tick the projects you want, and click **Import**. It shows a live result and the
-same resume-ready check at the end. Everything runs locally on your own machine - nothing is
-uploaded anywhere.
+opens a small wizard in your browser to pick a bundle and import it. Everything stays on your machine.
 
-## Moving between different operating systems
+## Updating
 
-Import runs **on the destination machine**, so it detects the right OS automatically and
-translates everything for you, including Windows drive letters and backslashes:
+```bash
+claude-teleport update
+```
 
-| From → To | Example folder rename |
-|---|---|
-| Linux/macOS → Windows | `-home-you-app` → `-C-Users-you-app` |
-| Windows → Linux/macOS | `-C-Users-you-app` → `-home-you-app` |
+checks for a newer release and swaps the binary in place. (`brew upgrade claude-teleport` works too, or re-run whichever installer you used.)
 
-Paths stored *inside* the transcripts are rewritten in the correct style too. Because
-transcripts are JSON, Windows paths are matched and re-written in their escaped form
-(`C:\\Users\\you`), so nothing is missed.
+## What moves, and what doesn't
 
-## Command reference
+**Moves:** your sessions, project memory, settings, prompt history, and the portable parts of `~/.claude.json`, all re-pathed for the new machine.
+
+**Never moves:** your login. Credentials are machine-locked and deliberately left out.
+
+**Skipped:** caches, telemetry, and other throwaway files that rebuild themselves.
+
+## Different operating systems
+
+Import runs on the destination, so it detects the OS and translates everything, including Windows drive letters and backslashes. Linux and macOS paths look like `/home/you` or `/Users/you`; Windows uses `C:\Users\you`. You do not have to do anything special, it just works in any direction.
+
+<details>
+<summary>Is it safe, and how does it work?</summary>
+
+**Safe by default:**
+
+- It never overwrites an existing file. It merges and tells you what it skipped; `--overwrite` backs up each replaced file first.
+- `--dry-run` shows exactly what will happen before anything is written.
+- The file-based flow is fully offline. Sharing scrubs likely secrets (best effort, so glance at what you send) and never includes your login.
+
+**How it works:**
+
+A bundle is a `.tgz` with a manifest that records each project's true absolute path, the piece the folder name throws away, read from `~/.claude.json` and the `cwd` stored inside each transcript. On import it re-encodes the folder names for the target OS, rewrites the in-file paths (matching Windows paths in their JSON-escaped form so none are missed), merges without overwriting, and verifies every session is resume-ready.
+
+The full design and reasoning is in [DESIGN.md](DESIGN.md).
+
+</details>
+
+<details>
+<summary>All commands and flags</summary>
 
 ```
 claude-teleport export   [--out FILE] [--config-dir DIR]
@@ -342,109 +176,56 @@ claude-teleport import   <bundle> [flags]
 claude-teleport inspect  <bundle>
 claude-teleport verify   [--config-dir DIR]
 claude-teleport sessions [--project P] [--config-dir DIR]
-claude-teleport share    <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]
-claude-teleport send     <session-id-prefix | --last> [--project P] [--with-context] [--no-redact] [--rendezvous URL] [--relay HOST:PORT] [--yes]
+claude-teleport share    <session-id | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]
+claude-teleport send     <session-id | --last> [--project P] [--with-context] [--no-redact] [--rendezvous URL] [--relay HOST:PORT] [--yes]
 claude-teleport receive  <code> [--config-dir DIR] [--map OLD=NEW]... [--rendezvous URL] [--relay HOST:PORT] [--yes]
 claude-teleport update   [--check] [--yes]
 claude-teleport gui      [bundle] [--port N]
 ```
 
-**`import` flags**
+`import` flags:
 
 | Flag | What it does |
 |---|---|
-| `--dry-run` | Show the plan and write nothing. Always start here. |
+| `--dry-run` | Show the plan and write nothing. A good first run. |
 | `--map OLD=NEW` | Remap a path prefix (repeatable). The most specific match wins. |
-| `--project P` | Import only this project, by its path or folder (repeatable; default: all). |
+| `--project P` | Import only this project, by path or folder (repeatable). |
 | `--target-home DIR` | Override the detected home directory. |
-| `--target-os OS` | Render paths for `linux`/`darwin`/`windows` (default: this machine). |
-| `--overwrite` | Replace files that already exist (each one is backed up first). |
-| `--deep` | Rewrite old paths *everywhere* in transcripts, not just the `cwd` field. |
+| `--target-os OS` | Render paths for `linux`, `darwin`, or `windows`. |
+| `--overwrite` | Replace existing files (each is backed up first). |
+| `--deep` | Rewrite old paths everywhere in transcripts, not just the `cwd` field. |
 | `--yes` | Skip the confirmation prompt. |
 
-- **`inspect`** prints what's inside a bundle without importing.
-- **`verify`** checks that the sessions already on this machine are resume-ready.
-- **`sessions`** lists your conversations so you can pick one to hand off.
-- **`share`** packs a single session into a file for a teammate, masking likely
-  secrets first. They import it from inside their own copy of the project.
-- **`send`** streams a single session to a teammate over an end-to-end-encrypted
-  connection identified by a short code. **`receive`** takes that code and pulls
-  it in. No file changes hands and no server can read it.
+`inspect` shows what is inside a bundle. `verify` checks the sessions already on this machine are resume-ready. `send`/`receive` use the public magic-wormhole servers by default; point them at your own with `--rendezvous`/`--relay` or the `CLAUDE_TELEPORT_RENDEZVOUS`/`CLAUDE_TELEPORT_RELAY` environment variables.
 
-## What gets moved (and what doesn't)
+</details>
 
-**Moved:** session transcripts, per-session sidecars, project memory, your user
-`settings.json`, prompt history, plan files, plugin manifests, and the portable parts of
-`~/.claude.json` (re-keyed to the new paths).
-
-**Never moved - your login.** Credentials are machine-locked (macOS Keychain, Windows user
-profile) and are deliberately left out. Sign in once after importing.
-
-**Skipped as junk:** caches, telemetry, shell snapshots, lock files, and device-identity
-fields - all of which rebuild themselves on first run.
-
-## Is it safe?
-
-- It **never overwrites** an existing file by default - it merges and tells you what it
-  skipped. `--overwrite` makes a timestamped backup of each file it replaces.
-- `--dry-run` shows exactly what will happen before anything is written.
-- The riskiest step - rewriting paths inside message text - is **off by default**. The safe
-  default only fixes the structural `cwd` field needed to resume. `--deep` opts into a full
-  rewrite.
-- It runs entirely offline. Your bundle and history never leave your computers.
-
-## How it works
-
-A bundle is a `.tgz` archive with a `manifest.json` written first. The manifest records each
-project's **true absolute path** - the piece the lossy folder name throws away - read from
-`~/.claude.json` and from the `cwd` stored inside each transcript. On import, claude-teleport:
-
-1. works out a new path for each project (auto-detected, or via `--map`),
-2. re-encodes the folder names for the target machine and OS,
-3. rewrites the old paths inside transcripts (JSON-escaped, so Windows paths match),
-4. merges everything in without overwriting, and
-5. verifies each migrated project's `cwd` matches its new folder.
-
-## FAQ
+<details>
+<summary>FAQ</summary>
 
 **Will this delete anything on my old machine?** No. `export` only reads.
 
-**Do I need Claude Code installed first on the new machine?** Yes - install it and sign in
-once so your account is set up, then import.
+**Do I need Claude Code on the new machine first?** Yes. Install it and sign in once so your account is set up, then import.
 
-**My new username/OS is different.** That's the whole point - it's handled. Preview with
-`--dry-run` and adjust with `--map` if a guess is off.
+**My new username or OS is different.** That is handled. Preview with `--dry-run` and adjust with `--map` if a guess is off.
 
-**I only want a couple of projects.** Use `--project <path-or-folder>` (repeatable), or tick
-just those in the GUI.
+**I only want a few projects.** Use `--project <path-or-folder>` (repeatable), or tick just those in the GUI.
 
-**Where is all this stored?** Under `~/.claude/` and `~/.claude.json` (or `%USERPROFILE%` on
-Windows). Set `CLAUDE_CONFIG_DIR` to relocate it; claude-teleport respects that variable.
+**Where does Claude Code keep all this?** Under `~/.claude/` and `~/.claude.json` (`%USERPROFILE%` on Windows). Set `CLAUDE_CONFIG_DIR` to relocate it; claude-teleport respects that variable.
+
+</details>
 
 ## Contributing
 
-For the architecture and the reasoning behind the design (path recovery,
-cross-OS rewriting, the security model, and the transfer protocol), see
-[DESIGN.md](DESIGN.md).
-
-Issues and pull requests are welcome. To develop:
+Issues and pull requests are welcome. The architecture and design decisions are written up in [DESIGN.md](DESIGN.md). To develop:
 
 ```bash
-go test ./...                              # unit tests
-go test -tags integration ./internal/transfer/   # real send/receive over a local server
-go vet ./...                               # static checks
-gofmt -l .                                 # should print nothing
-go run . gui                               # try the wizard locally
+go test ./...                                    # unit tests
+go test -tags integration ./internal/transfer/   # a real send/receive over a local server
+go vet ./... && gofmt -l .                        # checks (gofmt should print nothing)
 ```
 
-CI runs lint and tests on Linux, macOS, and Windows. Tagging `vX.Y.Z` builds and publishes
-release binaries automatically.
-
-## Star history
-
-<a href="https://star-history.com/#gowtham-sai-yadav/claude-teleport&Date">
-  <img src="https://api.star-history.com/svg?repos=gowtham-sai-yadav/claude-teleport&type=Date" alt="Star history chart" width="600">
-</a>
+CI runs on Linux, macOS, and Windows. Tagging `vX.Y.Z` builds and publishes the release automatically.
 
 ## License
 
