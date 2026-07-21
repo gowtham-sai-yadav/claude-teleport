@@ -131,15 +131,25 @@ Check it works: `claude-teleport version`
 
 ## Updating
 
-claude-teleport does not update itself. Nothing you install with `go install` or
-download by hand refreshes on its own, so you stay on the version you installed
-until you upgrade it yourself.
-
-If you installed with Go, run the same command again to rebuild at the newest
-release:
+The simplest way is to let the tool update itself:
 
 ```bash
+claude-teleport update
+```
+
+It checks GitHub for a newer release, and if there is one, downloads the build
+for your machine, verifies its checksum, and replaces the binary in place. Use
+`claude-teleport update --check` to only see whether you are behind.
+
+If you would rather do it by hand, whatever way you installed still works:
+
+```bash
+# installed with Go
 go install github.com/gowtham-sai-yadav/claude-teleport@latest
+# installed with the script (macOS/Linux)
+curl -fsSL https://gowthamsai.in/install.sh | sh
+# installed with Homebrew
+brew upgrade claude-teleport
 ```
 
 Just after a new release goes out, Go's module cache can take a few minutes to
@@ -327,6 +337,7 @@ claude-teleport sessions [--project P] [--config-dir DIR]
 claude-teleport share    <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]
 claude-teleport send     <session-id-prefix | --last> [--project P] [--with-context] [--no-redact] [--rendezvous URL] [--relay HOST:PORT] [--yes]
 claude-teleport receive  <code> [--config-dir DIR] [--map OLD=NEW]... [--rendezvous URL] [--relay HOST:PORT] [--yes]
+claude-teleport update   [--check] [--yes]
 claude-teleport gui      [bundle] [--port N]
 ```
 

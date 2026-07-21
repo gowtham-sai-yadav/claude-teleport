@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -22,10 +23,28 @@ import (
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/transfer"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/updater"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/webui"
 )
 
-const Version = "0.3.0"
+// version is stamped by the linker at release time via
+// -X ...internal/cli.version=<tag> (see .goreleaser.yaml). For `go install`
+// builds it stays empty and we fall back to the module version in the build
+// info, so the reported version tracks the git tag with no manual bumping.
+var version string
+
+// Version returns the running version, without a leading "v".
+func Version() string {
+	if version != "" {
+		return version
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v := bi.Main.Version; v != "" && v != "(devel)" {
+			return strings.TrimPrefix(v, "v")
+		}
+	}
+	return "dev"
+}
 
 func Run(args []string) error {
 	if len(args) == 0 {
@@ -49,10 +68,12 @@ func Run(args []string) error {
 		return runSend(args[1:])
 	case "receive":
 		return runReceive(args[1:])
+	case "update", "upgrade":
+		return runUpdate(args[1:])
 	case "gui":
 		return runGUI(args[1:])
 	case "version", "-v", "--version":
-		fmt.Println("claude-teleport", Version)
+		fmt.Println("claude-teleport", Version())
 		return nil
 	case "help", "-h", "--help":
 		printHelp()
@@ -63,7 +84,7 @@ func Run(args []string) error {
 }
 
 func printHelp() {
-	fmt.Print("claude-teleport " + Version + " - move your Claude Code history between machines\n\n" +
+	fmt.Print("claude-teleport " + Version() + " - move your Claude Code history between machines\n\n" +
 		"USAGE:\n" +
 		"  claude-teleport export  [--out FILE] [--config-dir DIR]\n" +
 		"  claude-teleport import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
@@ -73,6 +94,7 @@ func printHelp() {
 		"  claude-teleport share   <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
 		"  claude-teleport send    <session-id-prefix | --last> [--project P] [--with-context] [--no-redact] [--yes]\n" +
 		"  claude-teleport receive <code> [--config-dir DIR] [--map OLD=NEW]... [--yes]\n" +
+		"  claude-teleport update  [--check] [--yes]\n" +
 		"  claude-teleport gui     [bundle] [--port N]\n\n" +
 		"EXPORT runs on the OLD machine and writes a portable bundle.\n" +
 		"IMPORT runs on the NEW machine and restores it, translating paths for this OS\n" +
@@ -91,7 +113,7 @@ func runExport(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	res, err := exporter.Run(exporter.Options{Out: *out, ConfigDir: *cfg, Version: Version})
+	res, err := exporter.Run(exporter.Options{Out: *out, ConfigDir: *cfg, Version: Version()})
 	if err != nil {
 		return err
 	}
@@ -250,7 +272,7 @@ func runShare(args []string) error {
 	}
 	return exporter.RunShare(exporter.ShareOptions{
 		ConfigDir:     *cfg,
-		Version:       Version,
+		Version:       Version(),
 		Out:           *out,
 		SessionPrefix: prefix,
 		Project:       *project,
@@ -311,7 +333,7 @@ func runSend(args []string) error {
 
 	b, err := exporter.PrepareShare(exporter.ShareOptions{
 		ConfigDir:     *cfg,
-		Version:       Version,
+		Version:       Version(),
 		SessionPrefix: prefix,
 		Project:       *project,
 		Last:          *last,
@@ -492,6 +514,47 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// runUpdate checks GitHub for a newer release and, unless --check, downloads it,
+// verifies its checksum, and replaces this binary in place.
+func runUpdate(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	check := fs.Bool("check", false, "only report whether a newer version exists")
+	yes := fs.Bool("yes", false, "update without asking")
+	repo := fs.String("repo", updater.DefaultRepo, "owner/repo to update from")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	fmt.Println("Checking for updates...")
+	latest, err := updater.LatestVersion(ctx, *repo)
+	if err != nil {
+		return fmt.Errorf("could not check the latest version: %w", err)
+	}
+	latestClean := strings.TrimPrefix(latest, "v")
+	fmt.Printf("  installed : %s\n  latest    : %s\n", Version(), latestClean)
+
+	if !updater.Newer(latest, Version()) {
+		fmt.Println("You are already on the latest version.")
+		return nil
+	}
+	if *check {
+		fmt.Printf("A newer version is available (%s). Run `claude-teleport update` to install it.\n", latestClean)
+		return nil
+	}
+	if !*yes && !confirm(fmt.Sprintf("Update to %s now?", latestClean)) {
+		fmt.Println("Aborted.")
+		return nil
+	}
+	if err := updater.Apply(ctx, *repo, latest, progressPrinter("Downloading")); err != nil {
+		return fmt.Errorf("update failed: %w", err)
+	}
+	fmt.Printf("\nUpdated to %s.\n", latestClean)
+	return nil
 }
 
 // confirm asks a yes/no question on the terminal (default no).
