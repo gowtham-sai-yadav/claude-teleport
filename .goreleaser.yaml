@@ -40,7 +40,11 @@ checksum:
   name_template: "SHA256SUMS.txt"
   algorithm: sha256
 
-homebrew_casks:
+# A Homebrew formula, not a cask. Casks quarantine their download, so macOS
+# Gatekeeper blocks our unsigned binary; formulas install CLI binaries without
+# quarantine and stage a bare binary correctly. Install with
+# `brew install gowtham-sai-yadav/tap/claude-teleport` (no --cask).
+brews:
   - name: claude-teleport
     repository:
       owner: gowtham-sai-yadav
@@ -48,9 +52,12 @@ homebrew_casks:
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/gowtham-sai-yadav/claude-teleport"
     description: "Move your Claude Code history between machines, with paths fixed automatically"
+    license: "MIT"
     commit_author:
       name: goreleaser
       email: noreply@users.noreply.github.com
+    test: |
+      system "#{bin}/claude-teleport", "version"
 
 nfpms:
   - id: packages
