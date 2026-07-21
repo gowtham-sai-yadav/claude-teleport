@@ -72,13 +72,13 @@ names and rewrites the in-file paths for the new machine.
 **macOS and Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/gowtham-sai-yadav/claude-teleport/main/install.sh | sh
+curl -fsSL https://gowthamsai.in/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/gowtham-sai-yadav/claude-teleport/main/install.ps1 | iex
+irm https://gowthamsai.in/install.ps1 | iex
 ```
 
 This grabs the right prebuilt binary for your machine, verifies its SHA-256
