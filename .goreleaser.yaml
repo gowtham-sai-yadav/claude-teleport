@@ -1,0 +1,68 @@
+# GoReleaser configuration. On a pushed tag it cross-compiles every target,
+# publishes the GitHub release with checksums, and updates the Homebrew tap,
+# the Scoop bucket, and the .deb/.rpm packages, all from this one file.
+#
+# Asset names are kept identical to the previous hand-rolled workflow
+# (claude-teleport-<os>-<arch> and SHA256SUMS.txt) so install.sh keeps working.
+#
+# Validate locally without publishing:
+#   goreleaser check
+#   goreleaser release --snapshot --skip=publish --clean
+version: 2
+
+project_name: claude-teleport
+
+builds:
+  - id: claude-teleport
+    main: .
+    binary: claude-teleport
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+# Ship raw binaries (not tarballs), named exactly as before so the install
+# script and the README download table stay valid.
+archives:
+  - id: raw
+    formats: [binary]
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "SHA256SUMS.txt"
+  algorithm: sha256
+
+homebrew_casks:
+  - name: claude-teleport
+    repository:
+      owner: gowtham-sai-yadav
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/gowtham-sai-yadav/claude-teleport"
+    description: "Move your Claude Code history between machines, with paths fixed automatically"
+    commit_author:
+      name: goreleaser
+      email: noreply@users.noreply.github.com
+
+nfpms:
+  - id: packages
+    package_name: claude-teleport
+    homepage: "https://github.com/gowtham-sai-yadav/claude-teleport"
+    description: "Move your Claude Code history between machines, with paths fixed automatically"
+    maintainer: "Gowtham Sai Yadav <noreply@users.noreply.github.com>"
+    license: "MIT"
+    formats: [deb, rpm]
+
+release:
+  github:
+    owner: gowtham-sai-yadav
+    name: claude-teleport
+  # Keep the auto-generated notes from commits.
+  mode: replace
