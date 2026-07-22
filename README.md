@@ -2,9 +2,9 @@
 
 # claude-teleport
 
-**Move your [Claude Code](https://claude.com/claude-code) history to a new computer, with every path fixed automatically.**
+**Hand a [Claude Code](https://claude.com/claude-code) session to a teammate, or move your whole setup to a new machine. Private, no account, one command.**
 
-Sessions, memory, and settings. Linux, macOS, and Windows, in any direction.
+Sessions, memory, and settings, across Linux, macOS, and Windows.
 
 [![CI](https://github.com/gowtham-sai-yadav/claude-teleport/actions/workflows/ci.yml/badge.svg)](https://github.com/gowtham-sai-yadav/claude-teleport/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/gowtham-sai-yadav/claude-teleport?sort=semver)](https://github.com/gowtham-sai-yadav/claude-teleport/releases)
@@ -17,9 +17,11 @@ Sessions, memory, and settings. Linux, macOS, and Windows, in any direction.
 
 ---
 
-When I moved from my Linux laptop to a new Mac, I wanted my Claude Code history to come with me: the sessions, the memory, the project context. Copying the `.claude` folder by hand does not work, because Claude Code ties every session to the exact path your project lived at, and those paths change on a new machine.
+Your Claude Code sessions, memory, and project context live only on your machine. So the day you want to hand a conversation to a teammate, or move to a new laptop, you are stuck: copying the `.claude` folder by hand does not work, because every session is tied to the exact path your project lived at, and that path changes on another machine.
 
-claude-teleport packs your whole setup into one file and restores it on the new machine, rewriting every path so your conversations resume right where you left off.
+claude-teleport makes it one command. Send a live session straight to a teammate with a short code they type in, or pack your whole setup and carry it to a new machine, with every path rewritten so the conversation resumes right where it left off.
+
+It is private by default. Nothing is uploaded to a server or an account; a direct transfer is end-to-end encrypted, likely secrets are scrubbed before anything leaves your machine, and your login never travels.
 
 ## Install
 
@@ -65,9 +67,37 @@ cd claude-teleport && go build -o claude-teleport .
 
 </details>
 
+## Share a session with a teammate
+
+Hand one conversation to someone else, with all its context intact, so they can carry it forward. Find the session first:
+
+```bash
+claude-teleport sessions
+```
+
+Then send it one of two ways.
+
+**Straight across, by code** (no file to move, nothing uploaded anywhere):
+
+```bash
+claude-teleport send <id>
+```
+
+You read out the short code it prints; they run `claude-teleport receive <code>` from their copy of the project. The transfer is end-to-end encrypted, so no server can read it.
+
+**As a file**, if they are not around right now:
+
+```bash
+claude-teleport share <id>
+```
+
+They import it later with `claude-teleport import <file>`.
+
+Either way, likely secrets (keys, tokens, passwords) are scrubbed before anything leaves your machine, and your login is never included. `--last` picks your most recent session, and `--with-context` also includes the project's memory files.
+
 ## Move to a new machine
 
-Two commands, one on each computer.
+Moving all of your work to a new computer is two commands, one on each.
 
 **On the old machine**, pack everything into a file:
 
@@ -93,34 +123,6 @@ claude --resume
 ```
 
 > Your login does not transfer, on purpose. Credentials are locked to each machine, so just sign in once on the new one.
-
-## Share a single session
-
-Hand one conversation to a teammate, with all its context intact. Find the session first:
-
-```bash
-claude-teleport sessions
-```
-
-Then send it one of two ways.
-
-**As a file:**
-
-```bash
-claude-teleport share <id>
-```
-
-They import it from inside their copy of the project with `claude-teleport import <file>`.
-
-**Straight across, by code** (no file to move, nothing uploaded anywhere):
-
-```bash
-claude-teleport send <id>
-```
-
-You read out the short code it prints; they run `claude-teleport receive <code>` from their project. The transfer is end-to-end encrypted, so no server can read it.
-
-Either way, likely secrets (keys, tokens, passwords) are scrubbed before anything leaves your machine, and your login is never included. `--last` picks your most recent session, and `--with-context` also includes the project's memory files.
 
 ## Prefer clicking?
 
