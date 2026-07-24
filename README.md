@@ -67,6 +67,26 @@ cd claude-teleport && go build -o claude-teleport .
 
 </details>
 
+## Start here: the interactive cockpit
+
+The quickest way in is to just run:
+
+```bash
+claude-teleport
+```
+
+<p align="center">
+  <img src="docs/tui-home.png" alt="the claude-teleport cockpit: a searchable session list with send, share, receive, export, import and update a keypress away" width="820">
+</p>
+
+With a terminal attached, that opens a full-screen cockpit: your sessions in a searchable list, with every action a keypress away. Send one to a teammate over an encrypted code, share it to a file, receive one, export or import a backup, or update in place, all without remembering a single flag. Press `?` for what each key does. Run `claude-teleport tui` to open it explicitly; piped or scripted, the same binary behaves like a normal CLI.
+
+<p align="center">
+  <img src="docs/tui-help.png" alt="the ? overlay explaining every key, grouped into handing a session to a teammate versus moving your own history between machines" width="820">
+</p>
+
+Prefer typing the commands yourself? Everything below works on its own too.
+
 ## Share a session with a teammate
 
 Hand one conversation to someone else, with all its context intact, so they can carry it forward. Find the session first:
@@ -84,6 +104,10 @@ claude-teleport send <id>
 ```
 
 You read out the short code it prints; they run `claude-teleport receive <code>` from their copy of the project. The transfer is end-to-end encrypted, so no server can read it.
+
+<p align="center">
+  <img src="docs/tui-send.png" alt="the hand-off preview: session, project, message count, and confirmation that secrets are scrubbed before it streams over an encrypted connection" width="720">
+</p>
 
 **As a file**, if they are not around right now:
 
@@ -173,6 +197,8 @@ The full design and reasoning is in [DESIGN.md](DESIGN.md).
 <summary>All commands and flags</summary>
 
 ```
+claude-teleport                    open the interactive cockpit (default when a terminal is attached)
+claude-teleport tui                open the interactive cockpit explicitly
 claude-teleport export   [--out FILE] [--config-dir DIR]
 claude-teleport import   <bundle> [flags]
 claude-teleport inspect  <bundle>
@@ -214,6 +240,8 @@ claude-teleport gui      [bundle] [--port N]
 **I only want a few projects.** Use `--project <path-or-folder>` (repeatable), or tick just those in the GUI.
 
 **Where does Claude Code keep all this?** Under `~/.claude/` and `~/.claude.json` (`%USERPROFILE%` on Windows). Set `CLAUDE_CONFIG_DIR` to relocate it; claude-teleport respects that variable.
+
+**Some sessions are missing from the list.** Sessions recorded inside a temporary directory are hidden, since they are throwaway (some tools run Claude Code from a scratch folder and leave hundreds behind). Set `CLAUDE_TELEPORT_INCLUDE_TEMP=1` to show them.
 
 </details>
 
