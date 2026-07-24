@@ -20,6 +20,7 @@ const disposable = { dispose() {} };
 const vscodeStub = {
   StatusBarAlignment: { Left: 1, Right: 2 },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+  ProgressLocation: { Notification: 15, Window: 10 },
   ThemeIcon: class { constructor(id) { this.id = id; } },
   TreeItem: class { constructor(label, state) { this.label = label; this.collapsibleState = state; } },
   EventEmitter: class { constructor() { this.event = () => disposable; } fire() {} },
@@ -36,6 +37,7 @@ const vscodeStub = {
     showInputBox: async () => undefined,
     showInformationMessage: async () => undefined,
     showErrorMessage: async () => undefined,
+    withProgress: async (_opts, task) => task({ report() {} }),
     createTerminal() { return { show() {}, sendText() {}, dispose() {} }; },
   },
   workspace: {
@@ -55,7 +57,8 @@ const ext = require(path.join(__dirname, '..', 'out', 'extension.js'));
 
 // ---- 1) activation ---------------------------------------------------------
 const subscriptions = [];
-assert.doesNotThrow(() => ext.activate({ subscriptions }), 'activate() threw');
+const fakeContext = { subscriptions, globalStorageUri: { fsPath: require('os').tmpdir() + '/ct-ext-test' } };
+assert.doesNotThrow(() => ext.activate(fakeContext), 'activate() threw');
 assert.doesNotThrow(() => ext.deactivate(), 'deactivate() threw');
 
 const registered = new Set(calls.commands);

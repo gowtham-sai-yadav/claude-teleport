@@ -158,7 +158,7 @@ opens a small wizard in your browser to pick a bundle and import it. Everything 
 
 ## In your editor
 
-Prefer to stay in VS Code? The [claude-teleport extension](vscode/) adds the same actions to the Command Palette and a status-bar button: send a session by code, receive one, share to a file, or browse your sessions. It drives the CLI under the hood, so install the binary first.
+Prefer to stay in VS Code? The [claude-teleport extension](vscode/) adds the same actions to the Command Palette, a status-bar button, and a sidebar: send a session by code, receive one, share to a file, or browse your sessions. It drives the CLI under the hood and offers to install it for you on first use, so the extension is all you need.
 
 ## Updating
 

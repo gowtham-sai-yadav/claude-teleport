@@ -6,14 +6,16 @@ This extension is a thin front-end over the [`claude-teleport`](https://github.c
 
 ## Requirements
 
-Install the `claude-teleport` binary first (v0.5.1 or newer):
+The extension drives the `claude-teleport` CLI (v0.5.1+). You do not have to install it separately: the first time you use a command, if the CLI is not already on your PATH, the extension offers to **download it for you** — the prebuilt binary for your OS, fetched from the GitHub release and verified by SHA-256 checksum, cached in the extension's storage.
+
+Prefer to manage it yourself? Install it and it will be used automatically:
 
 ```bash
 curl -fsSL https://gowthamsai.in/install.sh | sh      # macOS / Linux
 brew install gowtham-sai-yadav/tap/claude-teleport    # Homebrew
 ```
 
-If it is not on your PATH, set **`claude-teleport.path`** in Settings.
+Or point **`claude-teleport.path`** at a specific binary in Settings.
 
 ## Commands
 
