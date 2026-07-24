@@ -215,6 +215,7 @@ func runSessions(args []string) error {
 	fs := flag.NewFlagSet("sessions", flag.ContinueOnError)
 	cfg := fs.String("config-dir", "", "override the Claude config dir")
 	project := fs.String("project", "", "only sessions whose project path or folder contains this")
+	asJSON := fs.Bool("json", false, "output the session list as JSON (for tooling, e.g. the editor extension)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -227,6 +228,33 @@ func runSessions(args []string) error {
 		return err
 	}
 	sessions = filterSessions(sessions, *project)
+
+	if *asJSON {
+		type sessionJSON struct {
+			ID        string `json:"id"`
+			ShortID   string `json:"shortId"`
+			Project   string `json:"project"`
+			Folder    string `json:"folder"`
+			Messages  int    `json:"messages"`
+			Modified  string `json:"modified"`
+			SizeBytes int64  `json:"sizeBytes"`
+			Title     string `json:"title"`
+		}
+		list := make([]sessionJSON, 0, len(sessions))
+		for _, s := range sessions {
+			list = append(list, sessionJSON{
+				ID: s.ID, ShortID: s.ShortID(), Project: s.ProjectPath, Folder: s.Folder,
+				Messages: s.Messages, Modified: s.ModTime.Format(time.RFC3339), SizeBytes: s.Size, Title: s.Title,
+			})
+		}
+		b, err := json.MarshalIndent(list, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(b))
+		return nil
+	}
+
 	if len(sessions) == 0 {
 		fmt.Println("No sessions found.")
 		return nil
