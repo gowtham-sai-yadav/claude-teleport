@@ -80,6 +80,13 @@ func Discover(p Paths) ([]Project, error) {
 		return nil, err
 	}
 
+	// Sessions recorded inside a throwaway temp directory are never a real
+	// project you would hand off or migrate - they are the litter a tool leaves
+	// when it shells out to `claude` from a scratch dir (a polymath-style log
+	// analyzer can create hundreds in one run). Hide them by default; set
+	// CLAUDE_TELEPORT_INCLUDE_TEMP to see everything.
+	includeTemp := os.Getenv("CLAUDE_TELEPORT_INCLUDE_TEMP") != ""
+
 	var out []Project
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -97,6 +104,9 @@ func Discover(p Paths) ([]Project, error) {
 				src = "transcript"
 			}
 		}
+		if !includeTemp && isEphemeralProject(orig, folder) {
+			continue
+		}
 		sessions, hasMem := scanProject(fp)
 		out = append(out, Project{
 			Folder:       folder,
@@ -108,6 +118,46 @@ func Discover(p Paths) ([]Project, error) {
 		})
 	}
 	return out, nil
+}
+
+// IsEphemeralPath reports whether p sits inside a throwaway temp directory -
+// the sort of scratch location a tool lands in when it shells out to `claude`
+// from a temp dir. A session recorded under such a path is never a real
+// project (the directory is gone on the next reboot), so it should not appear
+// in a listing, an export, or a handoff.
+func IsEphemeralPath(p string) bool {
+	if p == "" {
+		return false
+	}
+	s := strings.ToLower(strings.ReplaceAll(p, `\`, "/"))
+	// Unambiguous OS temp roots - safe to match anywhere in the path.
+	for _, m := range []string{"/private/var/folders/", "/var/folders/", "/appdata/local/temp/", "/windows/temp/"} {
+		if strings.Contains(s, m) {
+			return true
+		}
+	}
+	// Classic temp roots - only as a leading prefix, so a directory a person
+	// deliberately works in (e.g. ~/tmp-notes) is left alone.
+	for _, m := range []string{"/tmp/", "/private/tmp/", "/var/tmp/"} {
+		if strings.HasPrefix(s, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// isEphemeralProject decides whether a project folder is temp litter, using the
+// recovered path when we have one and falling back to markers baked into the
+// encoded folder name when we do not (path recovery can fail for these).
+func isEphemeralProject(originalPath, encodedFolder string) bool {
+	if IsEphemeralPath(originalPath) {
+		return true
+	}
+	if originalPath != "" {
+		return false // path is known and not a temp location
+	}
+	f := strings.ToLower(encodedFolder)
+	return strings.Contains(f, "var-folders") || strings.Contains(f, "appdata-local-temp")
 }
 
 func scanProject(dir string) (sessions int, hasMemory bool) {

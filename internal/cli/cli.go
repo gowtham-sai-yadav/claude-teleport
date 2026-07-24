@@ -23,8 +23,10 @@ import (
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/transfer"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/tui"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/updater"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/webui"
+	"golang.org/x/term"
 )
 
 // version is stamped by the linker at release time via
@@ -48,6 +50,11 @@ func Version() string {
 
 func Run(args []string) error {
 	if len(args) == 0 {
+		// With a terminal attached, the friendliest default is the interactive
+		// cockpit; piped or redirected, fall back to plain help text.
+		if term.IsTerminal(int(os.Stdout.Fd())) {
+			return runTUI(nil)
+		}
 		printHelp()
 		return nil
 	}
@@ -72,6 +79,8 @@ func Run(args []string) error {
 		return runUpdate(args[1:])
 	case "gui":
 		return runGUI(args[1:])
+	case "tui", "ui":
+		return runTUI(args[1:])
 	case "version", "-v", "--version":
 		fmt.Println("claude-teleport", Version())
 		return nil
@@ -79,13 +88,15 @@ func Run(args []string) error {
 		printHelp()
 		return nil
 	default:
-		return fmt.Errorf("unknown command %q (try: export, import, inspect, verify, gui)", args[0])
+		return fmt.Errorf("unknown command %q (try: tui, sessions, send, receive, share, export, import)", args[0])
 	}
 }
 
 func printHelp() {
 	fmt.Print("claude-teleport " + Version() + " - move your Claude Code history between machines\n\n" +
 		"USAGE:\n" +
+		"  claude-teleport                 open the interactive cockpit (default with a terminal)\n" +
+		"  claude-teleport tui             open the interactive cockpit explicitly\n" +
 		"  claude-teleport export  [--out FILE] [--config-dir DIR]\n" +
 		"  claude-teleport import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
 		"  claude-teleport inspect <bundle>\n" +
@@ -577,6 +588,22 @@ func runGUI(args []string) error {
 		bundlePath = pos[0]
 	}
 	return webui.Serve(*port, bundlePath)
+}
+
+// runTUI launches the full-screen interactive cockpit, wiring in the same
+// transfer configuration the send/receive commands accept so a self-hosted
+// rendezvous/relay works here too.
+func runTUI(args []string) error {
+	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
+	cfg := fs.String("config-dir", "", "override the Claude config dir")
+	rendezvous := fs.String("rendezvous", envOr("CLAUDE_TELEPORT_RENDEZVOUS", ""), "rendezvous server URL (default: public magic-wormhole)")
+	relay := fs.String("relay", envOr("CLAUDE_TELEPORT_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
+	words := fs.Int("code-words", 2, "number of words in a generated transfer code")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, CodeWords: *words}
+	return tui.Run(*cfg, tcfg, Version())
 }
 
 // parseInterleaved lets flags and positional arguments appear in any order.
