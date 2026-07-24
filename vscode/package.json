@@ -1,0 +1,155 @@
+{
+  "name": "claude-teleport",
+  "displayName": "claude-teleport",
+  "description": "Hand a Claude Code session to a teammate over an encrypted code, or share it to a file — without leaving VS Code.",
+  "version": "0.1.0",
+  "publisher": "gowtham-sai-yadav",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "claude code",
+    "session",
+    "share",
+    "ai"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gowtham-sai-yadav/claude-teleport"
+  },
+  "homepage": "https://gowthamsai.in/teleport/",
+  "bugs": {
+    "url": "https://github.com/gowtham-sai-yadav/claude-teleport/issues"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudeTeleport",
+          "title": "Teleport",
+          "icon": "media/teleport.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudeTeleport": [
+        {
+          "id": "claudeTeleport.sessions",
+          "name": "Sessions",
+          "icon": "media/teleport.svg"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "claudeTeleport.sessions",
+        "contents": "No Claude Code sessions to show.\n[Refresh](command:claude-teleport.refresh)\n[Receive a session](command:claude-teleport.receive)\n\nThe claude-teleport CLI does the work — make sure it is installed.\n[Install claude-teleport](https://gowthamsai.in/teleport/#install)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "claude-teleport.send",
+        "title": "Send a session by code",
+        "category": "Teleport"
+      },
+      {
+        "command": "claude-teleport.receive",
+        "title": "Receive a session",
+        "category": "Teleport",
+        "icon": "$(inbox)"
+      },
+      {
+        "command": "claude-teleport.share",
+        "title": "Share a session to a file",
+        "category": "Teleport"
+      },
+      {
+        "command": "claude-teleport.sessions",
+        "title": "Browse sessions",
+        "category": "Teleport"
+      },
+      {
+        "command": "claude-teleport.menu",
+        "title": "Open menu",
+        "category": "Teleport"
+      },
+      {
+        "command": "claude-teleport.refresh",
+        "title": "Refresh sessions",
+        "category": "Teleport",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "claude-teleport.sendItem",
+        "title": "Send by code",
+        "category": "Teleport",
+        "icon": "$(radio-tower)"
+      },
+      {
+        "command": "claude-teleport.shareItem",
+        "title": "Share to a file",
+        "category": "Teleport",
+        "icon": "$(file)"
+      },
+      {
+        "command": "claude-teleport.copyItemId",
+        "title": "Copy session id",
+        "category": "Teleport"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "claude-teleport.menu", "when": "false" },
+        { "command": "claude-teleport.sendItem", "when": "false" },
+        { "command": "claude-teleport.shareItem", "when": "false" },
+        { "command": "claude-teleport.copyItemId", "when": "false" }
+      ],
+      "view/title": [
+        { "command": "claude-teleport.receive", "when": "view == claudeTeleport.sessions", "group": "navigation@1" },
+        { "command": "claude-teleport.refresh", "when": "view == claudeTeleport.sessions", "group": "navigation@2" }
+      ],
+      "view/item/context": [
+        { "command": "claude-teleport.sendItem", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "inline@1" },
+        { "command": "claude-teleport.shareItem", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "inline@2" },
+        { "command": "claude-teleport.sendItem", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "1_actions@1" },
+        { "command": "claude-teleport.shareItem", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "1_actions@2" },
+        { "command": "claude-teleport.copyItemId", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "1_actions@3" }
+      ]
+    },
+    "configuration": {
+      "title": "claude-teleport",
+      "properties": {
+        "claude-teleport.path": {
+          "type": "string",
+          "default": "claude-teleport",
+          "description": "Path to the claude-teleport binary. Leave as the default if it is on your PATH."
+        },
+        "claude-teleport.configDir": {
+          "type": "string",
+          "default": "",
+          "description": "Override the Claude config dir (passed to the CLI as --config-dir). Leave empty for the default (~/.claude)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node ./test/verify.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}
