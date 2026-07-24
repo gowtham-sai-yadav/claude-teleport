@@ -1,0 +1,1077 @@
+// Package tui is the interactive terminal cockpit for claude-teleport. It is a
+// thin Bubble Tea front-end over the same building blocks the CLI uses
+// (exporter, transfer, importer, updater), so every feature is reachable
+// without remembering a single flag: browse your sessions, hand one to a
+// teammate over an encrypted code, share it to a file, and export/import/update
+// - all from one screen.
+//
+// Nothing here talks to disk or the network directly except through those
+// packages, and it never prints to stdout itself (that would tear the rendered
+// screen). Slow or streaming work runs in a goroutine that pushes typed
+// messages onto a channel; a small "listen" command feeds them back into the
+// Elm-style update loop, so the UI stays responsive and there are no mutexes.
+package tui
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	figure "github.com/common-nighthawk/go-figure"
+
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/importer"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/transfer"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/updater"
+)
+
+// ---- palette --------------------------------------------------------------
+// The same cosmic/coral identity as the landing page, mapped to the terminal.
+
+var (
+	signal = lipgloss.Color("#ff5a36") // coral - the one accent
+	paper  = lipgloss.Color("#ece7dd") // bright text
+	dim    = lipgloss.Color("#9a94aa") // secondary text
+	muted  = lipgloss.Color("#6b6676") // faint text / rules
+	okGrn  = lipgloss.Color("#7ee0a8") // success
+	errRed = lipgloss.Color("#ff6b6b") // failure
+)
+
+var (
+	bannerStyle  = lipgloss.NewStyle().Foreground(signal).Bold(true)
+	taglineStyle = lipgloss.NewStyle().Foreground(paper)
+	accentStyle  = lipgloss.NewStyle().Foreground(signal)
+	dimStyle     = lipgloss.NewStyle().Foreground(dim)
+	mutedStyle   = lipgloss.NewStyle().Foreground(muted)
+	okStyle      = lipgloss.NewStyle().Foreground(okGrn)
+	errStyle     = lipgloss.NewStyle().Foreground(errRed).Bold(true)
+	cardStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(muted).Padding(1, 3)
+	codeStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(signal).
+			Foreground(signal).Bold(true).Padding(1, 4)
+	labelStyle = lipgloss.NewStyle().Foreground(dim).Width(9)
+)
+
+// ---- modes ----------------------------------------------------------------
+
+type mode int
+
+const (
+	modeList      mode = iota // home: banner + session list
+	modeConfirm               // preview a session before send/share
+	modeSend                  // streaming a session over a wormhole
+	modeRecvCode              // typing the code to receive
+	modeReceive               // pulling + importing an incoming session
+	modeInputPath             // typing a bundle path to import
+	modeBusy                  // export / import-from-file / update working
+	modeUpdate                // an update is available; confirm install
+	modeResult                // a finished operation's summary (any key = back)
+	modeHelp                  // full explanation of every key (any key = back)
+)
+
+// ---- session list item ----------------------------------------------------
+
+type sessionItem struct{ s claudedir.Session }
+
+func (i sessionItem) Title() string {
+	t := strings.TrimSpace(i.s.Title)
+	if t == "" {
+		t = "(untitled session)"
+	}
+	return t
+}
+
+func (i sessionItem) Description() string {
+	proj := i.s.ProjectPath
+	if proj == "" {
+		proj = "(unknown project)"
+	} else {
+		proj = filepath.Base(proj)
+	}
+	return fmt.Sprintf("%s · %d msgs · %s · %s",
+		i.s.ShortID(), i.s.Messages, humanAgo(i.s.ModTime), proj)
+}
+
+func (i sessionItem) FilterValue() string {
+	return i.s.Title + " " + i.s.ID + " " + i.s.ProjectPath
+}
+
+// ---- model ----------------------------------------------------------------
+
+type model struct {
+	mode          mode
+	width, height int
+
+	paths     claudedir.Paths
+	configDir string // the --config-dir override, "" for the default
+	version   string
+	tcfg      transfer.Config
+
+	banner   string // pre-rendered ascii wordmark
+	bannerOK bool   // banner fits the current width
+
+	list     list.Model
+	spinner  spinner.Model
+	progress progress.Model
+	input    textinput.Model
+
+	withContext bool // include project memory in a share/send (off by default)
+
+	// operation context
+	prepped  *exporter.SessionBundle
+	forShare bool // the prepared bundle is for a file, not a wormhole
+
+	// streaming async plumbing
+	events chan tea.Msg
+	cancel context.CancelFunc
+	code   string
+	status string
+	done   int64
+	total  int64
+
+	// update flow
+	updLatest string
+
+	// result screen
+	resTitle string
+	resBody  string
+	resErr   bool
+
+	loadErr error
+}
+
+// ---- messages -------------------------------------------------------------
+
+type sessionsMsg struct {
+	items []list.Item
+	err   error
+}
+type preppedMsg struct {
+	b   *exporter.SessionBundle
+	err error
+}
+type codeMsg string
+type statusMsg string
+type progressMsg struct{ done, total int64 }
+type doneMsg struct {
+	title string
+	body  string
+	err   error
+}
+type updateAvailMsg struct {
+	latest string
+	newer  bool
+	err    error
+}
+
+// ---- entry point ----------------------------------------------------------
+
+// Run launches the interactive cockpit. configDir mirrors the --config-dir flag
+// the other commands accept; "" means the default (~/.claude).
+func Run(configDir string, tcfg transfer.Config, version string) error {
+	p, err := claudedir.Locate(configDir)
+	if err != nil {
+		return err
+	}
+	m := newModel(p, configDir, tcfg, version)
+	prog := tea.NewProgram(m, tea.WithAltScreen())
+	_, err = prog.Run()
+	return err
+}
+
+func newModel(p claudedir.Paths, configDir string, tcfg transfer.Config, version string) model {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = accentStyle
+
+	pr := progress.New(progress.WithSolidFill(string(signal)), progress.WithoutPercentage())
+
+	in := textinput.New()
+	in.Prompt = accentStyle.Render("› ")
+	in.Cursor.Style = accentStyle
+
+	d := list.NewDefaultDelegate()
+	d.Styles.SelectedTitle = d.Styles.SelectedTitle.Foreground(signal).BorderForeground(signal).Bold(true)
+	d.Styles.SelectedDesc = d.Styles.SelectedDesc.Foreground(signal).BorderForeground(signal)
+	d.Styles.NormalTitle = d.Styles.NormalTitle.Foreground(paper)
+	d.Styles.NormalDesc = d.Styles.NormalDesc.Foreground(muted)
+
+	l := list.New(nil, d, 0, 0)
+	l.Title = "your sessions"
+	l.Styles.Title = lipgloss.NewStyle().Foreground(paper).Bold(true)
+	l.SetShowStatusBar(true)
+	l.SetStatusBarItemName("session", "sessions")
+	l.SetShowHelp(false) // we draw our own footer
+	l.SetFilteringEnabled(true)
+	l.FilterInput.Cursor.Style = accentStyle
+	l.FilterInput.PromptStyle = accentStyle
+
+	return model{
+		mode:      modeList,
+		paths:     p,
+		configDir: configDir,
+		version:   version,
+		tcfg:      tcfg,
+		banner:    figure.NewFigure("teleport", "small", true).String(),
+		bannerOK:  true,
+		list:      l,
+		spinner:   sp,
+		progress:  pr,
+		input:     in,
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return tea.Batch(loadSessions(m.paths), m.spinner.Tick)
+}
+
+// ---- commands (side effects live here) ------------------------------------
+
+func loadSessions(p claudedir.Paths) tea.Cmd {
+	return func() tea.Msg {
+		sessions, err := claudedir.ListSessions(p)
+		if err != nil {
+			return sessionsMsg{err: err}
+		}
+		items := make([]list.Item, 0, len(sessions))
+		for _, s := range sessions {
+			items = append(items, sessionItem{s})
+		}
+		return sessionsMsg{items: items}
+	}
+}
+
+func prepareShare(configDir, version, id string, withContext bool) tea.Cmd {
+	return func() tea.Msg {
+		b, err := exporter.PrepareShare(exporter.ShareOptions{
+			ConfigDir:     configDir,
+			Version:       version,
+			SessionPrefix: id,
+			WithContext:   withContext,
+			Redact:        true,
+		})
+		return preppedMsg{b: b, err: err}
+	}
+}
+
+// waitForEvent yields the next message a running operation pushed onto the
+// channel, so streamed progress flows back into Update one frame at a time.
+func waitForEvent(ch chan tea.Msg) tea.Cmd {
+	return func() tea.Msg { return <-ch }
+}
+
+// emit blocks; used for rare, must-not-drop messages (code, status, done).
+func emit(ch chan tea.Msg, msg tea.Msg) { ch <- msg }
+
+// emitProgress never blocks the transfer goroutine: if the UI is behind, we
+// simply skip a frame rather than stalling the bytes.
+func emitProgress(ch chan tea.Msg, done, total int64) {
+	select {
+	case ch <- progressMsg{done, total}:
+	default:
+	}
+}
+
+// startSend streams the prepared bundle over a wormhole, reporting the code and
+// progress as they happen.
+func startSend(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, b *exporter.SessionBundle) tea.Cmd {
+	return func() tea.Msg {
+		go func() {
+			var buf bytes.Buffer
+			if err := b.WriteBundle(&buf); err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			err := transfer.Send(ctx, cfg, b.Name, bytes.NewReader(buf.Bytes()),
+				func(code string) { emit(ch, codeMsg(code)) },
+				func(done, total int64) { emitProgress(ch, done, total) },
+			)
+			if err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			emit(ch, doneMsg{
+				title: "Sent.",
+				body:  "The session is on your teammate's machine.\nThey can open Claude Code in their project and resume it.",
+			})
+		}()
+		return nil
+	}
+}
+
+// startReceive pulls an incoming bundle and imports it into the current
+// directory's project, exactly as the receive command does.
+func startReceive(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, p claudedir.Paths, code string) tea.Cmd {
+	return func() tea.Msg {
+		go func() {
+			emit(ch, statusMsg("Connecting…"))
+			in, err := transfer.Receive(ctx, cfg, code)
+			if err != nil {
+				emit(ch, doneMsg{err: fmt.Errorf("receive: %w", err)})
+				return
+			}
+			tmp, err := os.CreateTemp("", "claude-teleport-recv-*.tgz")
+			if err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			tmpPath := tmp.Name()
+			defer os.Remove(tmpPath)
+
+			emit(ch, statusMsg("Receiving…"))
+			const maxBytes = 2 << 30
+			if _, err := copyCapped(ch, tmp, in, in.Bytes, maxBytes); err != nil {
+				tmp.Close()
+				emit(ch, doneMsg{err: fmt.Errorf("receive: %w", err)})
+				return
+			}
+			if err := tmp.Close(); err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+
+			emit(ch, statusMsg("Importing…"))
+			summary, err := runImport(p, tmpPath)
+			if err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			emit(ch, doneMsg{title: "Received.", body: summary})
+		}()
+		return nil
+	}
+}
+
+// startExport writes a full portable backup of every session.
+func startExport(ch chan tea.Msg, configDir, version string) tea.Cmd {
+	return func() tea.Msg {
+		go func() {
+			res, err := exporter.Run(exporter.Options{ConfigDir: configDir, Version: version})
+			if err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			body := fmt.Sprintf("%d project(s), %d session(s) → %s\n(%s)",
+				res.Projects, res.Sessions, res.Path, exporter.HumanSize(res.Bytes))
+			emit(ch, doneMsg{title: "Exported.", body: body})
+		}()
+		return nil
+	}
+}
+
+// startImportFile imports a bundle chosen by path.
+func startImportFile(ch chan tea.Msg, p claudedir.Paths, path string) tea.Cmd {
+	return func() tea.Msg {
+		go func() {
+			summary, err := runImport(p, path)
+			if err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			emit(ch, doneMsg{title: "Imported.", body: summary})
+		}()
+		return nil
+	}
+}
+
+// startWriteShare writes the prepared bundle to a file for a teammate.
+func startWriteShare(ch chan tea.Msg, b *exporter.SessionBundle) tea.Cmd {
+	return func() tea.Msg {
+		go func() {
+			f, err := os.Create(b.Name)
+			if err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			if err := b.WriteBundle(f); err != nil {
+				f.Close()
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			if err := f.Close(); err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			abs, _ := filepath.Abs(b.Name)
+			emit(ch, doneMsg{
+				title: "Shared to a file.",
+				body:  fmt.Sprintf("Wrote %s\nSend it to your teammate; they run:\n  claude-teleport import %s", abs, b.Name),
+			})
+		}()
+		return nil
+	}
+}
+
+func checkUpdate(version string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		latest, err := updater.LatestVersion(ctx, updater.DefaultRepo)
+		if err != nil {
+			return updateAvailMsg{err: err}
+		}
+		return updateAvailMsg{latest: strings.TrimPrefix(latest, "v"), newer: updater.Newer(latest, version)}
+	}
+}
+
+func startUpdate(ch chan tea.Msg, tag string) tea.Cmd {
+	return func() tea.Msg {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+			emit(ch, statusMsg("Downloading…"))
+			err := updater.Apply(ctx, updater.DefaultRepo, "v"+strings.TrimPrefix(tag, "v"),
+				func(done, total int64) { emitProgress(ch, done, total) })
+			if err != nil {
+				emit(ch, doneMsg{err: err})
+				return
+			}
+			emit(ch, doneMsg{title: "Updated.", body: "Now on " + strings.TrimPrefix(tag, "v") + ". Restart to use the new version."})
+		}()
+		return nil
+	}
+}
+
+// runImport composes the non-printing importer building blocks into one call
+// and returns a human summary.
+func runImport(p claudedir.Paths, bundlePath string) (string, error) {
+	man, err := importer.LoadManifest(bundlePath)
+	if err != nil {
+		return "", err
+	}
+	// BuildPlan/Import take the already-located paths directly, so ConfigDir on
+	// Options is irrelevant here (it only matters to the printing importer.Run).
+	opts := importer.Options{Bundle: bundlePath, AssumeYes: true}
+	plan := importer.BuildPlan(man, p, opts)
+	res, err := importer.Import(p, plan, opts)
+	if err != nil {
+		return "", err
+	}
+	ok := 0
+	for _, v := range res.Verify {
+		if v.OK {
+			ok++
+		}
+	}
+	return fmt.Sprintf("%d file(s) written, %d skipped, %d project(s) merged.\n%d/%d project(s) resume-ready.\nOpen Claude Code in this folder to continue.",
+		res.Written, res.Skipped, res.MergedProjects, ok, len(res.Verify)), nil
+}
+
+// copyCapped streams src→dst, refusing to write more than limit bytes and
+// pushing progress onto ch.
+func copyCapped(ch chan tea.Msg, dst io.Writer, src io.Reader, total, limit int64) (int64, error) {
+	buf := make([]byte, 32*1024)
+	var done int64
+	for {
+		n, rerr := src.Read(buf)
+		if n > 0 {
+			if done+int64(n) > limit {
+				return done, fmt.Errorf("incoming bundle exceeds the %s safety cap", exporter.HumanSize(limit))
+			}
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				return done, werr
+			}
+			done += int64(n)
+			emitProgress(ch, done, total)
+		}
+		if rerr == io.EOF {
+			return done, nil
+		}
+		if rerr != nil {
+			return done, rerr
+		}
+	}
+}
+
+// ---- update loop ----------------------------------------------------------
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.bannerOK = lipgloss.Width(m.banner) <= m.width
+		m.layout()
+		return m, nil
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case sessionsMsg:
+		if msg.err != nil {
+			m.loadErr = msg.err
+			return m, nil
+		}
+		m.list.SetItems(msg.items)
+		return m, nil
+
+	case preppedMsg:
+		if msg.err != nil {
+			return m.toResult("Could not prepare that session.", msg.err.Error(), true), nil
+		}
+		m.prepped = msg.b
+		m.mode = modeConfirm
+		return m, nil
+
+	case codeMsg:
+		m.code = string(msg)
+		return m, waitForEvent(m.events)
+
+	case statusMsg:
+		m.status = string(msg)
+		return m, waitForEvent(m.events)
+
+	case progressMsg:
+		m.done, m.total = msg.done, msg.total
+		return m, waitForEvent(m.events)
+
+	case updateAvailMsg:
+		if msg.err != nil {
+			return m.toResult("Could not check for updates.", msg.err.Error(), true), nil
+		}
+		if !msg.newer {
+			return m.toResult("Up to date.", "You are on the latest version ("+m.version+").", false), nil
+		}
+		m.updLatest = msg.latest
+		m.mode = modeUpdate
+		return m, nil
+
+	case doneMsg:
+		m.clearOp()
+		if msg.err != nil {
+			return m.toResult("That didn't work.", msg.err.Error(), true), nil
+		}
+		return m.toResult(msg.title, msg.body, false), nil
+
+	case tea.KeyMsg:
+		return m.handleKey(msg)
+	}
+
+	// Route anything else to whichever child owns the current screen.
+	return m.routeToChild(msg)
+}
+
+func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+
+	// Ctrl-C always quits (cancelling any transfer in flight first).
+	if key == "ctrl+c" {
+		if m.cancel != nil {
+			m.cancel()
+		}
+		return m, tea.Quit
+	}
+
+	switch m.mode {
+
+	case modeList:
+		// While typing in the filter, the list owns every key.
+		if m.list.FilterState() == list.Filtering {
+			return m.routeToChild(msg)
+		}
+		switch key {
+		case "q", "esc":
+			return m, tea.Quit
+		case "enter":
+			if it, ok := m.selected(); ok {
+				m.forShare = false
+				return m, prepareShare(m.configDir, m.version, it.s.ID, m.withContext)
+			}
+			return m, nil
+		case "s":
+			if it, ok := m.selected(); ok {
+				m.forShare = true
+				return m, prepareShare(m.configDir, m.version, it.s.ID, m.withContext)
+			}
+			return m, nil
+		case "r":
+			return m.startInput(modeRecvCode), nil
+		case "i":
+			return m.startInput(modeInputPath), nil
+		case "e":
+			nm := m.enterBusy("Exporting every session…")
+			return nm, tea.Batch(startExport(nm.events, nm.configDir, nm.version), waitForEvent(nm.events), m.spinner.Tick)
+		case "u":
+			m.mode = modeBusy
+			m.status = "Checking for updates…"
+			return m, tea.Batch(checkUpdate(m.version), m.spinner.Tick)
+		case "c":
+			m.withContext = !m.withContext
+			return m, nil
+		case "?":
+			m.mode = modeHelp
+			return m, nil
+		}
+		return m.routeToChild(msg)
+
+	case modeConfirm:
+		switch key {
+		case "enter":
+			if m.forShare {
+				nm := m.enterBusy("Writing the file…")
+				return nm, tea.Batch(startWriteShare(nm.events, m.prepped), waitForEvent(nm.events), m.spinner.Tick)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+			m.cancel = cancel
+			m.events = make(chan tea.Msg, 64)
+			m.mode, m.status, m.code, m.done, m.total = modeSend, "Opening a secure channel…", "", 0, 0
+			return m, tea.Batch(startSend(m.events, ctx, m.tcfg, m.prepped), waitForEvent(m.events), m.spinner.Tick)
+		case "esc", "q":
+			m.prepped = nil
+			m.mode = modeList
+			return m, nil
+		}
+		return m, nil
+
+	case modeSend, modeReceive, modeBusy:
+		if key == "esc" {
+			if m.cancel != nil {
+				m.cancel()
+			}
+			return m, nil // the goroutine will report the cancellation as a doneMsg
+		}
+		return m, nil
+
+	case modeRecvCode, modeInputPath:
+		switch key {
+		case "esc":
+			m.mode = modeList
+			m.input.Blur()
+			return m, nil
+		case "enter":
+			val := strings.TrimSpace(m.input.Value())
+			if val == "" {
+				return m, nil
+			}
+			m.input.Blur()
+			if m.mode == modeRecvCode {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+				m.cancel = cancel
+				m.events = make(chan tea.Msg, 64)
+				m.mode, m.status, m.done, m.total = modeReceive, "Connecting…", 0, 0
+				return m, tea.Batch(startReceive(m.events, ctx, m.tcfg, m.paths, val), waitForEvent(m.events), m.spinner.Tick)
+			}
+			nm := m.enterBusy("Importing " + filepath.Base(val) + "…")
+			return nm, tea.Batch(startImportFile(nm.events, nm.paths, val), waitForEvent(nm.events), m.spinner.Tick)
+		}
+		return m.routeToChild(msg)
+
+	case modeUpdate:
+		switch key {
+		case "enter":
+			nm := m.enterBusy("Downloading " + m.updLatest + "…")
+			return nm, tea.Batch(startUpdate(nm.events, m.updLatest), waitForEvent(nm.events), m.spinner.Tick)
+		case "esc", "q":
+			m.mode = modeList
+			return m, nil
+		}
+		return m, nil
+
+	case modeResult:
+		// Any key returns home.
+		m.mode = modeList
+		m.resTitle, m.resBody, m.resErr = "", "", false
+		return m, nil
+
+	case modeHelp:
+		// Any key returns home.
+		m.mode = modeList
+		return m, nil
+	}
+	return m, nil
+}
+
+// routeToChild forwards a message to whatever component owns the active screen.
+func (m model) routeToChild(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch m.mode {
+	case modeList:
+		m.list, cmd = m.list.Update(msg)
+	case modeRecvCode, modeInputPath:
+		m.input, cmd = m.input.Update(msg)
+	}
+	return m, cmd
+}
+
+// ---- small state helpers --------------------------------------------------
+
+func (m model) selected() (sessionItem, bool) {
+	it, ok := m.list.SelectedItem().(sessionItem)
+	return it, ok
+}
+
+func (m *model) startInput(md mode) model {
+	m.mode = md
+	m.input.SetValue("")
+	if md == modeRecvCode {
+		m.input.Placeholder = "7-crossover-marbles"
+	} else {
+		m.input.Placeholder = "path/to/claude-teleport-session.tgz"
+	}
+	m.input.Focus()
+	return *m
+}
+
+// enterBusy switches to the spinner screen and opens a fresh event channel.
+func (m *model) enterBusy(status string) model {
+	m.mode = modeBusy
+	m.status = status
+	m.done, m.total = 0, 0
+	m.events = make(chan tea.Msg, 64)
+	return *m
+}
+
+func (m *model) clearOp() {
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+	}
+	m.code, m.status, m.done, m.total = "", "", 0, 0
+	m.prepped = nil
+}
+
+func (m model) toResult(title, body string, isErr bool) model {
+	m.mode = modeResult
+	m.resTitle, m.resBody, m.resErr = title, body, isErr
+	return m
+}
+
+// layout keeps the list sized to whatever room the header and footer leave.
+func (m *model) layout() {
+	if m.width == 0 {
+		return
+	}
+	headerH := lipgloss.Height(m.headerView())
+	footerH := lipgloss.Height(m.footerView())
+	h := m.height - headerH - footerH - 1
+	if h < 3 {
+		h = 3
+	}
+	m.list.SetSize(m.width, h)
+}
+
+// ---- views ----------------------------------------------------------------
+
+func (m model) View() string {
+	switch m.mode {
+	case modeList:
+		if m.loadErr != nil {
+			return m.headerView() + "\n\n" + errStyle.Render("Could not read your sessions: ") + m.loadErr.Error() + "\n"
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, m.headerView(), m.list.View(), m.footerView())
+	case modeConfirm:
+		return m.centered(m.confirmView())
+	case modeSend:
+		return m.centered(m.sendView())
+	case modeRecvCode:
+		return m.centered(m.inputView("Receive a session", "Enter the code your teammate read out:", "It imports into this folder's project."))
+	case modeReceive:
+		return m.centered(m.transferView("Receiving a session"))
+	case modeInputPath:
+		return m.centered(m.inputView("Import a bundle", "Path to a .tgz bundle:", "A file exported or shared with you."))
+	case modeBusy:
+		return m.centered(m.busyView())
+	case modeUpdate:
+		return m.centered(m.updateView())
+	case modeResult:
+		return m.centered(m.resultView())
+	case modeHelp:
+		return m.centered(m.helpView())
+	}
+	return ""
+}
+
+// helpView is the full legend behind the `?` key: what each action does, in
+// plain words, grouped so the send/share vs export/import distinction is clear.
+func (m model) helpView() string {
+	ctx := "off"
+	if m.withContext {
+		ctx = "on"
+	}
+	head := func(s string) string { return accentStyle.Bold(true).Render(s) }
+	kcol := lipgloss.NewStyle().Foreground(signal).Width(6)
+	row := func(k, d string) string { return "  " + kcol.Render(k) + dimStyle.Render(d) }
+
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		accentStyle.Bold(true).Render("What everything does"),
+		"",
+		head("Browse"),
+		row("↑ ↓", "move through your sessions"),
+		row("/", "search by title, project, or id"),
+		row("row", "title · id · messages · last active · project"),
+		"",
+		head("Hand a session to a teammate"),
+		row("↵", "send — stream it over an encrypted code, no file"),
+		row("s", "share — write it to a .tgz file to send yourself"),
+		row("r", "receive — type their code; it lands in this folder"),
+		"",
+		head("Move your own history between machines"),
+		row("e", "export — pack every session into one backup file"),
+		row("i", "import — restore a backup or shared file here"),
+		"",
+		head("Other"),
+		row("c", "context — include project memory in a share (now: "+ctx+")"),
+		row("u", "update — install a newer claude-teleport in place"),
+		row("q", "quit"),
+		"",
+		mutedStyle.Render("Secrets are scrubbed before anything leaves. Everything runs"),
+		mutedStyle.Render("on this machine — no account, no server in the middle."),
+		"",
+		keyHint("any key", "back"),
+	)
+	return cardStyle.Render(body)
+}
+
+func (m model) headerView() string {
+	var b strings.Builder
+	if m.bannerOK {
+		b.WriteString(bannerStyle.Render(strings.TrimRight(m.banner, "\n")))
+	} else {
+		b.WriteString(bannerStyle.Render("◈ claude-teleport"))
+	}
+	b.WriteString("\n")
+	b.WriteString(taglineStyle.Render("hand a Claude Code session to anyone."))
+	b.WriteString("\n")
+	b.WriteString(accentStyle.Render("private by construction") + dimStyle.Render(" · everything runs on this machine"))
+	b.WriteString("\n")
+	b.WriteString(mutedStyle.Render(fmt.Sprintf("claude-teleport v%s", m.version)))
+	b.WriteString("\n")
+	return b.String()
+}
+
+func (m model) footerView() string {
+	ctx := "off"
+	if m.withContext {
+		ctx = "on"
+	}
+	line1 := strings.Join([]string{
+		keyHint("↵", "send"), keyHint("s", "share to file"), keyHint("r", "receive"),
+		keyHint("e", "export"), keyHint("i", "import"), keyHint("u", "update"),
+	}, dimStyle.Render("   "))
+	line2 := strings.Join([]string{
+		keyHint("/", "search"), keyHint("c", "context: "+ctx),
+		keyHint("?", "help"), keyHint("↑↓", "move"), keyHint("q", "quit"),
+	}, dimStyle.Render("   "))
+	rule := mutedStyle.Render(strings.Repeat("─", max(1, min(m.width, 80))))
+	return rule + "\n" + line1 + "\n" + line2
+}
+
+func keyHint(k, label string) string {
+	return accentStyle.Render(k) + " " + dimStyle.Render(label)
+}
+
+func (m model) confirmView() string {
+	p := m.prepped.Preview
+	verb := "Send"
+	transport := "This streams over an end-to-end-encrypted connection."
+	if m.forShare {
+		verb = "Share"
+		transport = "This writes a file you hand to your teammate."
+	}
+	ctxLine := "conversation only (memory not included)"
+	if p.WithContext {
+		ctxLine = "project memory INCLUDED"
+	}
+	secrets := fmt.Sprintf("%d likely secret(s) masked", p.SecretsMasked)
+
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		accentStyle.Bold(true).Render(verb+" this session?"),
+		"",
+		row("session", fmt.Sprintf("%s  (%s)", p.Title, p.ShortID)),
+		row("project", orUnknown(p.ProjectPath)),
+		row("content", fmt.Sprintf("%d message(s), %s", p.Messages, exporter.HumanSize(p.Bytes))),
+		row("context", ctxLine),
+		row("secrets", secrets),
+		"",
+		dimStyle.Render(transport),
+		"",
+		keyHint("↵", "confirm")+"    "+keyHint("esc", "cancel"),
+	)
+	return cardStyle.Render(body)
+}
+
+func (m model) sendView() string {
+	var b strings.Builder
+	b.WriteString(accentStyle.Bold(true).Render("Sending a session") + "\n\n")
+	if m.code == "" {
+		b.WriteString(m.spinner.View() + " " + dimStyle.Render(m.status))
+	} else {
+		b.WriteString(dimStyle.Render("Read this code to your teammate:") + "\n\n")
+		b.WriteString(codeStyle.Render(m.code) + "\n\n")
+		b.WriteString(dimStyle.Render("They run:") + "\n")
+		b.WriteString(paperText("  claude-teleport receive "+m.code) + "\n\n")
+		if m.total > 0 {
+			b.WriteString(m.progress.ViewAs(ratio(m.done, m.total)) + " " + dimStyle.Render(pct(m.done, m.total)) + "\n")
+		} else {
+			b.WriteString(m.spinner.View() + " " + dimStyle.Render("waiting for them to connect…") + "\n")
+		}
+	}
+	b.WriteString("\n" + keyHint("esc", "cancel"))
+	return cardStyle.Render(b.String())
+}
+
+func (m model) transferView(title string) string {
+	var b strings.Builder
+	b.WriteString(accentStyle.Bold(true).Render(title) + "\n\n")
+	b.WriteString(m.spinner.View() + " " + dimStyle.Render(orDefault(m.status, "working…")) + "\n\n")
+	if m.total > 0 {
+		b.WriteString(m.progress.ViewAs(ratio(m.done, m.total)) + " " + dimStyle.Render(pct(m.done, m.total)) + "\n")
+	}
+	b.WriteString("\n" + keyHint("esc", "cancel"))
+	return cardStyle.Render(b.String())
+}
+
+func (m model) busyView() string {
+	var b strings.Builder
+	b.WriteString(m.spinner.View() + " " + taglineStyle.Render(orDefault(m.status, "working…")) + "\n")
+	if m.total > 0 {
+		b.WriteString("\n" + m.progress.ViewAs(ratio(m.done, m.total)) + " " + dimStyle.Render(pct(m.done, m.total)) + "\n")
+	}
+	return cardStyle.Render(b.String())
+}
+
+func (m model) inputView(title, prompt, hint string) string {
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		accentStyle.Bold(true).Render(title),
+		"",
+		dimStyle.Render(prompt),
+		m.input.View(),
+		"",
+		mutedStyle.Render(hint),
+		"",
+		keyHint("↵", "go")+"    "+keyHint("esc", "cancel"),
+	)
+	return cardStyle.Render(body)
+}
+
+func (m model) updateView() string {
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		accentStyle.Bold(true).Render("An update is available"),
+		"",
+		row("installed", m.version),
+		row("latest", m.updLatest),
+		"",
+		dimStyle.Render("Downloads the signed release and verifies its checksum."),
+		"",
+		keyHint("↵", "install")+"    "+keyHint("esc", "not now"),
+	)
+	return cardStyle.Render(body)
+}
+
+func (m model) resultView() string {
+	titleStyle := okStyle
+	glyph := "✓ "
+	if m.resErr {
+		titleStyle, glyph = errStyle, "✗ "
+	}
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Bold(true).Render(glyph+m.resTitle),
+		"",
+		taglineStyle.Render(m.resBody),
+		"",
+		mutedStyle.Render("press any key to go back"),
+	)
+	style := cardStyle
+	if m.resErr {
+		style = cardStyle.BorderForeground(errRed)
+	} else {
+		style = cardStyle.BorderForeground(okGrn)
+	}
+	return style.Render(body)
+}
+
+// centered places a card in the middle of the screen with the wordmark above.
+func (m model) centered(card string) string {
+	head := bannerStyle.Render("◈ claude-teleport")
+	block := lipgloss.JoinVertical(lipgloss.Center, head, "", card)
+	if m.width == 0 || m.height == 0 {
+		return block
+	}
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, block)
+}
+
+// ---- tiny formatting helpers ----------------------------------------------
+
+func row(label, val string) string {
+	return labelStyle.Render(label) + dimStyle.Render(": ") + taglineStyle.Render(val)
+}
+
+func paperText(s string) string { return taglineStyle.Render(s) }
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "(unknown project)"
+	}
+	return s
+}
+
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}
+
+func ratio(done, total int64) float64 {
+	if total <= 0 {
+		return 0
+	}
+	r := float64(done) / float64(total)
+	if r > 1 {
+		return 1
+	}
+	return r
+}
+
+func pct(done, total int64) string {
+	if total <= 0 {
+		return exporter.HumanSize(done)
+	}
+	return fmt.Sprintf("%.0f%% (%s / %s)", ratio(done, total)*100, exporter.HumanSize(done), exporter.HumanSize(total))
+}
+
+func humanAgo(t time.Time) string {
+	if t.IsZero() {
+		return "unknown"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	default:
+		return t.Format("2006-01-02")
+	}
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

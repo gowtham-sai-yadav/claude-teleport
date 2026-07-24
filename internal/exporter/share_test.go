@@ -16,12 +16,12 @@ import (
 // bundle it writes reads back as a valid single-session bundle.
 func TestPrepareShareBuildsSessionBundle(t *testing.T) {
 	dir := t.TempDir()
-	projDir := filepath.Join(dir, "projects", "-tmp-demo")
+	projDir := filepath.Join(dir, "projects", "-home-demo-proj")
 	if err := os.MkdirAll(projDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	id := "abcdef01-2345-6789-abcd-ef0123456789"
-	line := `{"type":"user","cwd":"/tmp/demo","sessionId":"` + id + `","message":{"role":"user","content":"hello there"}}` + "\n"
+	line := `{"type":"user","cwd":"/home/demo/proj","sessionId":"` + id + `","message":{"role":"user","content":"hello there"}}` + "\n"
 	if err := os.WriteFile(filepath.Join(projDir, id+".jsonl"), []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -33,8 +33,8 @@ func TestPrepareShareBuildsSessionBundle(t *testing.T) {
 	if b.Session.ID != id {
 		t.Errorf("session id = %q, want %q", b.Session.ID, id)
 	}
-	if b.Preview.ProjectPath != "/tmp/demo" {
-		t.Errorf("project path = %q, want /tmp/demo", b.Preview.ProjectPath)
+	if b.Preview.ProjectPath != "/home/demo/proj" {
+		t.Errorf("project path = %q, want /home/demo/proj", b.Preview.ProjectPath)
 	}
 	if b.Preview.Messages == 0 {
 		t.Errorf("expected a nonzero message count")
@@ -67,7 +67,7 @@ func TestPrepareShareBuildsSessionBundle(t *testing.T) {
 	if man.SessionID != id {
 		t.Errorf("manifest session id = %q, want %q", man.SessionID, id)
 	}
-	if len(man.Projects) != 1 || man.Projects[0].OriginalPath != "/tmp/demo" {
+	if len(man.Projects) != 1 || man.Projects[0].OriginalPath != "/home/demo/proj" {
 		t.Errorf("manifest projects = %+v", man.Projects)
 	}
 }
