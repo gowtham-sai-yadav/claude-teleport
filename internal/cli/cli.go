@@ -19,6 +19,7 @@ import (
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
 	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/claudecode" // registers the Claude Code provider
 	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/codex"      // registers the Codex CLI provider
+	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/opencode"   // registers the opencode provider
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
@@ -104,7 +105,7 @@ func printHelp() {
 		"  claude-teleport import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
 		"  claude-teleport inspect <bundle>\n" +
 		"  claude-teleport verify  [--config-dir DIR]\n" +
-		"  claude-teleport sessions [--tool claude-code|codex|all] [--project P] [--config-dir DIR] [--json]\n" +
+		"  claude-teleport sessions [--tool claude-code|codex|opencode|all] [--project P] [--config-dir DIR] [--json]\n" +
 		"  claude-teleport share   <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
 		"  claude-teleport send    <session-id-prefix | --last> [--project P] [--with-context] [--no-redact] [--yes]\n" +
 		"  claude-teleport receive <code> [--config-dir DIR] [--map OLD=NEW]... [--yes]\n" +
