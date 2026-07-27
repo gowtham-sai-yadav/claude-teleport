@@ -197,6 +197,54 @@ func Resolve(id ID, override string) (Bound, error) {
 	return Bound{Provider: p, Roots: r}, nil
 }
 
+// AssignShortIDs sets each ShortID to the shortest prefix of ID that is unique
+// within s, never shorter than min. This is the treatment git gives commit
+// hashes, and it is necessary for any tool whose ids are time-ordered: Codex uses
+// UUIDv7, whose leading characters encode the timestamp, so two sessions started
+// moments apart share a long prefix and a fixed-width handle would name both.
+//
+// Keeping the handle a genuine prefix matters: a user copies it from a listing and
+// passes it back as an id, so it has to still match.
+func AssignShortIDs(s []Session, min int) {
+	if min < 1 {
+		min = 1
+	}
+	// Longest id bounds how far a prefix could ever need to grow.
+	longest := 0
+	for _, x := range s {
+		if len(x.ID) > longest {
+			longest = len(x.ID)
+		}
+	}
+	for i := range s {
+		n := min
+		for n < len(s[i].ID) && !uniquePrefix(s, i, n) {
+			n++
+		}
+		if n > len(s[i].ID) {
+			n = len(s[i].ID)
+		}
+		s[i].ShortID = s[i].ID[:n]
+	}
+}
+
+// uniquePrefix reports whether s[i].ID[:n] matches no other session's id.
+func uniquePrefix(s []Session, i, n int) bool {
+	if n > len(s[i].ID) {
+		return false
+	}
+	p := s[i].ID[:n]
+	for j := range s {
+		if j == i {
+			continue
+		}
+		if len(s[j].ID) >= n && s[j].ID[:n] == p {
+			return false
+		}
+	}
+	return true
+}
+
 // SortSessions orders sessions newest first, which is how every caller shows
 // them. Ties break on ID so the order is stable rather than arbitrary.
 func SortSessions(s []Session) {

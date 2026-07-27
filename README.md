@@ -207,7 +207,7 @@ claude-teleport export   [--out FILE] [--config-dir DIR]
 claude-teleport import   <bundle> [flags]
 claude-teleport inspect  <bundle>
 claude-teleport verify   [--config-dir DIR]
-claude-teleport sessions [--project P] [--config-dir DIR]
+claude-teleport sessions [--tool claude-code|codex|all] [--project P] [--config-dir DIR] [--json]
 claude-teleport share    <session-id | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]
 claude-teleport send     <session-id | --last> [--project P] [--with-context] [--no-redact] [--rendezvous URL] [--relay HOST:PORT] [--yes]
 claude-teleport receive  <code> [--config-dir DIR] [--map OLD=NEW]... [--rendezvous URL] [--relay HOST:PORT] [--yes]
@@ -246,6 +246,8 @@ claude-teleport gui      [bundle] [--port N]
 **Where does Claude Code keep all this?** Under `~/.claude/` and `~/.claude.json` (`%USERPROFILE%` on Windows). Set `CLAUDE_CONFIG_DIR` to relocate it; claude-teleport respects that variable.
 
 **Some sessions are missing from the list.** Sessions recorded inside a temporary directory are hidden, since they are throwaway (some tools run Claude Code from a scratch folder and leave hundreds behind). Set `CLAUDE_TELEPORT_INCLUDE_TEMP=1` to show them.
+
+**Do other coding agents work?** `claude-teleport sessions --tool codex` lists your [OpenAI Codex CLI](https://github.com/openai/codex) sessions, and `--tool all` lists everything found on the machine. This is read-only for now: sharing and moving still work with Claude Code only, and the list says so when it includes sessions it cannot yet move.
 
 </details>
 
