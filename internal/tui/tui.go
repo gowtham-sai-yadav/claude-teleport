@@ -30,6 +30,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	figure "github.com/common-nighthawk/go-figure"
 
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
+	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/claudecode" // registers the Claude Code provider
+	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/codex"      // registers the Codex CLI provider
+	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/opencode"   // registers the opencode provider
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/agentshare"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/importer"
@@ -84,7 +89,12 @@ const (
 
 // ---- session list item ----------------------------------------------------
 
-type sessionItem struct{ s claudedir.Session }
+type sessionItem struct {
+	s agent.Session
+	// showTool is set when more than one coding tool was found, so someone using
+	// only Claude Code sees exactly the row they saw before.
+	showTool bool
+}
 
 func (i sessionItem) Title() string {
 	t := strings.TrimSpace(i.s.Title)
@@ -101,12 +111,17 @@ func (i sessionItem) Description() string {
 	} else {
 		proj = filepath.Base(proj)
 	}
-	return fmt.Sprintf("%s · %d msgs · %s · %s",
-		i.s.ShortID(), i.s.Messages, humanAgo(i.s.ModTime), proj)
+	line := fmt.Sprintf("%s · %d msgs · %s · %s",
+		i.s.ShortID, i.s.Messages, humanAgo(i.s.ModTime), proj)
+	if i.showTool {
+		line = string(i.s.Provider) + "  " + line
+	}
+	return line
 }
 
 func (i sessionItem) FilterValue() string {
-	return i.s.Title + " " + i.s.ID + " " + i.s.ProjectPath
+	// The tool name is searchable, so "/codex" narrows the list to one tool.
+	return i.s.Title + " " + i.s.ID + " " + i.s.ProjectPath + " " + string(i.s.Provider)
 }
 
 // ---- model ----------------------------------------------------------------
@@ -115,8 +130,12 @@ type model struct {
 	mode          mode
 	width, height int
 
-	paths     claudedir.Paths
-	configDir string // the --config-dir override, "" for the default
+	// roots holds where each installed tool keeps its data, filled in when the
+	// session list loads. configDir is the --config-dir override, which has always
+	// meant the Claude directory.
+	roots     map[agent.ID]agent.Roots
+	tools     int // how many tools were found, decides whether rows show a tool name
+	configDir string
 	version   string
 	tcfg      transfer.Config
 
@@ -131,7 +150,7 @@ type model struct {
 	withContext bool // include project memory in a share/send (off by default)
 
 	// operation context
-	prepped  *exporter.SessionBundle
+	prepped  *prepared
 	forShare bool // the prepared bundle is for a file, not a wormhole
 
 	// streaming async plumbing
@@ -157,12 +176,28 @@ type model struct {
 // ---- messages -------------------------------------------------------------
 
 type sessionsMsg struct {
-	items []list.Item
-	err   error
+	items    []list.Item
+	roots    map[agent.ID]agent.Roots
+	tools    int
+	problems []string
+	err      error
 }
 type preppedMsg struct {
-	b   *exporter.SessionBundle
+	b   *prepared
 	err error
+}
+
+// prepared is one session captured in memory, ready to be written to a file or
+// streamed, with the tool it came from remembered. It exists so the confirm
+// screen and both send paths do not have to know which tool produced it.
+type prepared struct {
+	provider agent.ID
+	name     string
+	preview  agent.Preview
+	write    func(io.Writer) error
+	// withContext is only meaningful for Claude Code, whose bundles can carry the
+	// project's memory files.
+	withContext bool
 }
 type codeMsg string
 type statusMsg string
@@ -184,17 +219,13 @@ type updateAvailMsg struct {
 // Run launches the interactive cockpit. configDir mirrors the --config-dir flag
 // the other commands accept; "" means the default (~/.claude).
 func Run(configDir string, tcfg transfer.Config, version string) error {
-	p, err := claudedir.Locate(configDir)
-	if err != nil {
-		return err
-	}
-	m := newModel(p, configDir, tcfg, version)
+	m := newModel(configDir, tcfg, version)
 	prog := tea.NewProgram(m, tea.WithAltScreen())
-	_, err = prog.Run()
+	_, err := prog.Run()
 	return err
 }
 
-func newModel(p claudedir.Paths, configDir string, tcfg transfer.Config, version string) model {
+func newModel(configDir string, tcfg transfer.Config, version string) model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = accentStyle
@@ -223,7 +254,6 @@ func newModel(p claudedir.Paths, configDir string, tcfg transfer.Config, version
 
 	return model{
 		mode:      modeList,
-		paths:     p,
 		configDir: configDir,
 		version:   version,
 		tcfg:      tcfg,
@@ -237,35 +267,104 @@ func newModel(p claudedir.Paths, configDir string, tcfg transfer.Config, version
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(loadSessions(m.paths), m.spinner.Tick)
+	return tea.Batch(loadSessions(m.configDir), m.spinner.Tick)
 }
 
 // ---- commands (side effects live here) ------------------------------------
 
-func loadSessions(p claudedir.Paths) tea.Cmd {
+// loadSessions gathers sessions from every coding tool installed on this machine.
+//
+// One tool failing is not allowed to blank the list: a broken or half-installed
+// tool would otherwise hide everything else, which is the worst possible failure
+// for a screen whose whole job is showing you your work.
+func loadSessions(configDir string) tea.Cmd {
 	return func() tea.Msg {
-		sessions, err := claudedir.ListSessions(p)
-		if err != nil {
-			return sessionsMsg{err: err}
+		var (
+			sessions []agent.Session
+			roots    = map[agent.ID]agent.Roots{}
+			tools    int
+			problems []string
+		)
+		for _, p := range agent.All() {
+			// --config-dir has always meant the Claude directory, so it is only
+			// passed there; for another tool it would name something unrelated.
+			override := ""
+			if p.ID() == agent.ClaudeCode {
+				override = configDir
+			}
+			r, present, err := p.Locate(override)
+			if err != nil || !present {
+				continue
+			}
+			got, err := p.ListSessions(r)
+			if err != nil {
+				problems = append(problems, p.DisplayName()+": "+err.Error())
+				continue
+			}
+			tools++
+			roots[p.ID()] = r
+			sessions = append(sessions, got...)
 		}
+		agent.SortSessions(sessions)
+
 		items := make([]list.Item, 0, len(sessions))
 		for _, s := range sessions {
-			items = append(items, sessionItem{s})
+			items = append(items, sessionItem{s: s, showTool: tools > 1})
 		}
-		return sessionsMsg{items: items}
+		return sessionsMsg{items: items, roots: roots, tools: tools, problems: problems}
 	}
 }
 
-func prepareShare(configDir, version, id string, withContext bool) tea.Cmd {
+// prepareShare captures the selected session in memory, using whichever path
+// belongs to its tool. Claude Code keeps its original exporter, whose bundle
+// layout every released binary reads; every other tool goes through agentshare.
+func prepareShare(m model, s agent.Session) tea.Cmd {
+	withContext := m.withContext
+	configDir, version := m.configDir, m.version
+	roots := m.roots[s.Provider]
+
 	return func() tea.Msg {
-		b, err := exporter.PrepareShare(exporter.ShareOptions{
-			ConfigDir:     configDir,
-			Version:       version,
-			SessionPrefix: id,
-			WithContext:   withContext,
-			Redact:        true,
-		})
-		return preppedMsg{b: b, err: err}
+		if s.Provider == agent.ClaudeCode {
+			b, err := exporter.PrepareShare(exporter.ShareOptions{
+				ConfigDir:     configDir,
+				Version:       version,
+				SessionPrefix: s.ID,
+				WithContext:   withContext,
+				Redact:        true,
+			})
+			if err != nil {
+				return preppedMsg{err: err}
+			}
+			return preppedMsg{b: &prepared{
+				provider: agent.ClaudeCode,
+				name:     b.Name,
+				preview: agent.Preview{
+					Title:         b.Preview.Title,
+					ShortID:       b.Preview.ShortID,
+					ProjectPath:   b.Preview.ProjectPath,
+					Messages:      b.Preview.Messages,
+					Bytes:         b.Preview.Bytes,
+					SecretsMasked: b.Preview.SecretsMasked,
+				},
+				write:       b.WriteBundle,
+				withContext: withContext,
+			}}
+		}
+
+		p, ok := agent.Get(s.Provider)
+		if !ok {
+			return preppedMsg{err: fmt.Errorf("unknown tool %q", s.Provider)}
+		}
+		ab, err := agentshare.Pack(p, roots, s, agentshare.Options{ToolVersion: version, Redact: true})
+		if err != nil {
+			return preppedMsg{err: err}
+		}
+		return preppedMsg{b: &prepared{
+			provider: s.Provider,
+			name:     ab.Name,
+			preview:  ab.Preview,
+			write:    ab.WriteBundle,
+		}}
 	}
 }
 
@@ -302,15 +401,15 @@ func emitProgress(ch chan tea.Msg, done, total int64) {
 
 // startSend streams the prepared bundle over a wormhole, reporting the code and
 // progress as they happen.
-func startSend(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, b *exporter.SessionBundle) tea.Cmd {
+func startSend(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, b *prepared) tea.Cmd {
 	return func() tea.Msg {
 		go func() {
 			var buf bytes.Buffer
-			if err := b.WriteBundle(&buf); err != nil {
+			if err := b.write(&buf); err != nil {
 				emit(ch, doneMsg{err: err})
 				return
 			}
-			err := transfer.Send(ctx, withFallbackNotice(ch, cfg), b.Name, bytes.NewReader(buf.Bytes()),
+			err := transfer.Send(ctx, withFallbackNotice(ch, cfg), b.name, bytes.NewReader(buf.Bytes()),
 				func(code string) { emit(ch, codeMsg(code)) },
 				func(done, total int64) { emitProgress(ch, done, total) },
 			)
@@ -320,16 +419,25 @@ func startSend(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, b *exp
 			}
 			emit(ch, doneMsg{
 				title: "Sent.",
-				body:  "The session is on your teammate's machine.\nThey can open Claude Code in their project and resume it.",
+				body: "The session is on your teammate's machine.\nThey open " +
+					toolName(b.provider) + " in their project and carry on.",
 			})
 		}()
 		return nil
 	}
 }
 
+// toolName is the human name of a tool, falling back to its id.
+func toolName(id agent.ID) string {
+	if p, ok := agent.Get(id); ok {
+		return p.DisplayName()
+	}
+	return string(id)
+}
+
 // startReceive pulls an incoming bundle and imports it into the current
 // directory's project, exactly as the receive command does.
-func startReceive(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, p claudedir.Paths, code string) tea.Cmd {
+func startReceive(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, configDir, code string) tea.Cmd {
 	return func() tea.Msg {
 		go func() {
 			emit(ch, statusMsg("Connecting…"))
@@ -359,7 +467,7 @@ func startReceive(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, p c
 			}
 
 			emit(ch, statusMsg("Importing…"))
-			summary, err := runImport(p, tmpPath)
+			summary, err := runImport(configDir, tmpPath)
 			if err != nil {
 				emit(ch, doneMsg{err: err})
 				return
@@ -388,10 +496,10 @@ func startExport(ch chan tea.Msg, configDir, version string) tea.Cmd {
 }
 
 // startImportFile imports a bundle chosen by path.
-func startImportFile(ch chan tea.Msg, p claudedir.Paths, path string) tea.Cmd {
+func startImportFile(ch chan tea.Msg, configDir, path string) tea.Cmd {
 	return func() tea.Msg {
 		go func() {
-			summary, err := runImport(p, path)
+			summary, err := runImport(configDir, path)
 			if err != nil {
 				emit(ch, doneMsg{err: err})
 				return
@@ -403,15 +511,15 @@ func startImportFile(ch chan tea.Msg, p claudedir.Paths, path string) tea.Cmd {
 }
 
 // startWriteShare writes the prepared bundle to a file for a teammate.
-func startWriteShare(ch chan tea.Msg, b *exporter.SessionBundle) tea.Cmd {
+func startWriteShare(ch chan tea.Msg, b *prepared) tea.Cmd {
 	return func() tea.Msg {
 		go func() {
-			f, err := os.Create(b.Name)
+			f, err := os.Create(b.name)
 			if err != nil {
 				emit(ch, doneMsg{err: err})
 				return
 			}
-			if err := b.WriteBundle(f); err != nil {
+			if err := b.write(f); err != nil {
 				f.Close()
 				emit(ch, doneMsg{err: err})
 				return
@@ -420,10 +528,11 @@ func startWriteShare(ch chan tea.Msg, b *exporter.SessionBundle) tea.Cmd {
 				emit(ch, doneMsg{err: err})
 				return
 			}
-			abs, _ := filepath.Abs(b.Name)
+			abs, _ := filepath.Abs(b.name)
 			emit(ch, doneMsg{
 				title: "Shared to a file.",
-				body:  fmt.Sprintf("Wrote %s\nSend it to your teammate; they run:\n  claude-teleport import %s", abs, b.Name),
+				body: fmt.Sprintf("Wrote %s\nSend it to your teammate; they run:\n  claude-teleport import %s\n(they need %s installed)",
+					abs, b.name, toolName(b.provider)),
 			})
 		}()
 		return nil
@@ -460,9 +569,38 @@ func startUpdate(ch chan tea.Msg, tag string) tea.Cmd {
 	}
 }
 
-// runImport composes the non-printing importer building blocks into one call
-// and returns a human summary.
-func runImport(p claudedir.Paths, bundlePath string) (string, error) {
+// runImport applies a bundle and returns a human summary.
+//
+// The sender's tool is recorded in the manifest, so the receiver never has to say
+// which one it was: a Claude bundle goes through the original importer, and any
+// other tool's session goes to that tool's provider.
+func runImport(configDir, bundlePath string) (string, error) {
+	_, foreign, err := agentshare.PeekAgent(bundlePath)
+	if err != nil {
+		return "", err
+	}
+	if foreign {
+		// A shared session attaches to the folder the user is standing in, the same
+		// rule Claude shared sessions follow.
+		targetDir, werr := os.Getwd()
+		if werr != nil {
+			return "", werr
+		}
+		res, uerr := agentshare.Unpack(bundlePath, targetDir, configDir)
+		if uerr != nil {
+			return "", uerr
+		}
+		body := fmt.Sprintf("Imported one %s session into\n  %s", res.DisplayName, targetDir)
+		if res.ResumeHint != "" {
+			body += "\n\nCarry on with:\n  " + res.ResumeHint
+		}
+		return body, nil
+	}
+
+	p, err := claudedir.Locate(configDir)
+	if err != nil {
+		return "", err
+	}
 	man, err := importer.LoadManifest(bundlePath)
 	if err != nil {
 		return "", err
@@ -532,7 +670,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadErr = msg.err
 			return m, nil
 		}
+		m.roots, m.tools = msg.roots, msg.tools
 		m.list.SetItems(msg.items)
+		if len(msg.problems) > 0 {
+			// Say which tool could not be read rather than quietly showing a short
+			// list the user has no way to question.
+			m.notice = "Could not read some sessions:\n  " + strings.Join(msg.problems, "\n  ")
+		}
 		return m, nil
 
 	case preppedMsg:
@@ -609,13 +753,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if it, ok := m.selected(); ok {
 				m.forShare = false
-				return m, prepareShare(m.configDir, m.version, it.s.ID, m.withContext)
+				return m, prepareShare(m, it.s)
 			}
 			return m, nil
 		case "s":
 			if it, ok := m.selected(); ok {
 				m.forShare = true
-				return m, prepareShare(m.configDir, m.version, it.s.ID, m.withContext)
+				return m, prepareShare(m, it.s)
 			}
 			return m, nil
 		case "r":
@@ -683,10 +827,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.cancel = cancel
 				m.events = make(chan tea.Msg, 64)
 				m.mode, m.status, m.notice, m.done, m.total = modeReceive, "Connecting…", "", 0, 0
-				return m, tea.Batch(startReceive(m.events, ctx, m.tcfg, m.paths, val), waitForEvent(m.events), m.spinner.Tick)
+				return m, tea.Batch(startReceive(m.events, ctx, m.tcfg, m.configDir, val), waitForEvent(m.events), m.spinner.Tick)
 			}
 			nm := m.enterBusy("Importing " + filepath.Base(val) + "…")
-			return nm, tea.Batch(startImportFile(nm.events, nm.paths, val), waitForEvent(nm.events), m.spinner.Tick)
+			return nm, tea.Batch(startImportFile(nm.events, nm.configDir, val), waitForEvent(nm.events), m.spinner.Tick)
 		}
 		return m.routeToChild(msg)
 
@@ -832,8 +976,9 @@ func (m model) helpView() string {
 		"",
 		head("Browse"),
 		row("↑ ↓", "move through your sessions"),
-		row("/", "search by title, project, or id"),
-		row("row", "title · id · messages · last active · project"),
+		row("/", "search by title, project, id, or tool name"),
+		row("row", "tool · id · messages · last active · project"),
+		row("", "every coding agent found on this machine is listed"),
 		"",
 		head("Hand a session to a teammate"),
 		row("↵", "send — stream it over an encrypted code, no file"),
@@ -865,7 +1010,7 @@ func (m model) headerView() string {
 		b.WriteString(bannerStyle.Render("◈ claude-teleport"))
 	}
 	b.WriteString("\n")
-	b.WriteString(taglineStyle.Render("hand a Claude Code session to anyone."))
+	b.WriteString(taglineStyle.Render("hand a coding-agent session to anyone."))
 	b.WriteString("\n")
 	b.WriteString(accentStyle.Render("private by construction") + dimStyle.Render(" · everything runs on this machine"))
 	b.WriteString("\n")
@@ -896,7 +1041,7 @@ func keyHint(k, label string) string {
 }
 
 func (m model) confirmView() string {
-	p := m.prepped.Preview
+	p := m.prepped.preview
 	verb := "Send"
 	transport := "This streams over an end-to-end-encrypted connection."
 	if m.forShare {
@@ -904,7 +1049,7 @@ func (m model) confirmView() string {
 		transport = "This writes a file you hand to your teammate."
 	}
 	ctxLine := "conversation only (memory not included)"
-	if p.WithContext {
+	if m.prepped.withContext {
 		ctxLine = "project memory INCLUDED"
 	}
 	secrets := fmt.Sprintf("%d likely secret(s) masked", p.SecretsMasked)
@@ -912,7 +1057,8 @@ func (m model) confirmView() string {
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		accentStyle.Bold(true).Render(verb+" this session?"),
 		"",
-		row("session", fmt.Sprintf("%s  (%s)", p.Title, p.ShortID)),
+		row("session", fmt.Sprintf("%s  (%s)", orDefault(p.Title, "(untitled)"), p.ShortID)),
+		row("tool", toolName(m.prepped.provider)),
 		row("project", orUnknown(p.ProjectPath)),
 		row("content", fmt.Sprintf("%d message(s), %s", p.Messages, exporter.HumanSize(p.Bytes))),
 		row("context", ctxLine),

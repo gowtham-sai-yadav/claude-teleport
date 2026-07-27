@@ -247,7 +247,14 @@ claude-teleport gui      [bundle] [--port N]
 
 **Some sessions are missing from the list.** Sessions recorded inside a temporary directory are hidden, since they are throwaway (some tools run Claude Code from a scratch folder and leave hundreds behind). Set `CLAUDE_TELEPORT_INCLUDE_TEMP=1` to show them.
 
-**Do other coding agents work?** `claude-teleport sessions --tool codex` lists your [OpenAI Codex CLI](https://github.com/openai/codex) sessions and `--tool opencode` lists your [opencode](https://github.com/anomalyco/opencode) ones; `--tool all` lists everything found on the machine. This is read-only for now: sharing and moving still work with Claude Code only, and the list says so when it includes sessions it cannot yet move.
+**Do other coding agents work?** Yes. [OpenAI Codex CLI](https://github.com/openai/codex) and [opencode](https://github.com/anomalyco/opencode) sessions are listed alongside your Claude Code ones, and you can share and send them the same way:
+
+```bash
+claude-teleport sessions --tool all        # every tool on this machine
+claude-teleport send <id> --tool codex     # hand a Codex session to a teammate
+```
+
+The receiving side needs no flag: which tool a session came from travels with it, so `receive` and `import` put it back where it belongs. They do need that tool installed. What is *not* supported yet is opening a session from one tool inside a different one; a Codex session goes to Codex.
 
 </details>
 

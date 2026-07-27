@@ -74,9 +74,16 @@ var (
 // execRunner runs bin with args and returns stdout, folding stderr into the
 // error because that is where the CLI explains a bad query.
 func execRunner(bin string, args ...string) ([]byte, error) {
+	return execRunnerIn("", bin, args...)
+}
+
+// execRunnerIn is execRunner with a working directory, which is how opencode is
+// told which project an imported session belongs to.
+func execRunnerIn(dir, bin string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Dir = dir
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

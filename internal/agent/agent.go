@@ -101,6 +101,79 @@ type Provider interface {
 	ListSessions(r Roots) ([]Session, error)
 }
 
+// Entry is one file inside a bundle, named relative to its provider's prefix.
+type Entry struct {
+	Name string
+	Data []byte
+}
+
+// Preview is what the user is shown before a session leaves the machine. Sharing
+// is irreversible once a code is read out, so this exists to make the decision an
+// informed one rather than a prompt to click through.
+type Preview struct {
+	Title         string
+	ShortID       string
+	ProjectPath   string
+	Messages      int
+	Bytes         int64 // uncompressed size of what will be sent
+	SecretsMasked int
+	AgentVersion  string // the tool's version on this machine, recorded for diagnosis
+}
+
+// Packed is one session captured in memory, ready to be written to a file or
+// streamed over a transfer. Nothing has left the machine yet.
+type Packed struct {
+	Entries []Entry
+	Preview Preview
+}
+
+// PackOptions carries the policy a provider must apply while packing.
+type PackOptions struct {
+	// Scrub masks likely secrets and reports how many it found. It is supplied by
+	// the caller rather than chosen by the provider, so that "what gets redacted"
+	// stays one decision in one place for every tool.
+	Scrub func([]byte) ([]byte, int)
+}
+
+// Unpacked reports what landed after an unpack.
+type Unpacked struct {
+	SessionID string // the id the session now has on this machine
+	Written   int
+	// ResumeHint is the exact thing to type to carry on, e.g.
+	// "codex resume 019f...". Different tools resume differently and a user should
+	// not have to know which.
+	ResumeHint string
+}
+
+// Sharer is implemented by providers whose individual sessions can be packed up
+// and put back somewhere else.
+//
+// It is separate from Provider because Claude Code deliberately does not
+// implement it: its bundle layout is frozen for compatibility with every released
+// binary and is produced by the original exporter. Keeping that path untouched is
+// worth more than making the interface look uniform.
+type Sharer interface {
+	// Pack captures one session in memory, scrubbed, without writing anything.
+	Pack(r Roots, s Session, opts PackOptions) (*Packed, error)
+
+	// Unpack writes a packed session into this machine's copy of the tool and
+	// binds it to targetDir, so it resumes against the project the receiver is
+	// actually standing in rather than the sender's path.
+	Unpack(r Roots, entries []Entry, targetDir string) (*Unpacked, error)
+
+	// BundlePrefix is where this tool's files live inside a bundle. It must never
+	// collide with the Claude layout: a binary released before multi-tool support
+	// routes purely on these prefixes, and would otherwise unpack a foreign
+	// session into a user's Claude directory.
+	BundlePrefix() string
+}
+
+// SharerFor returns the Sharer for a provider, if it has one.
+func SharerFor(p Provider) (Sharer, bool) {
+	s, ok := p.(Sharer)
+	return s, ok
+}
+
 var (
 	mu        sync.RWMutex
 	providers = map[ID]Provider{}
@@ -116,6 +189,14 @@ func Register(p Provider) {
 		panic(fmt.Sprintf("agent: provider %q registered twice", p.ID()))
 	}
 	providers[p.ID()] = p
+}
+
+// Unregister removes a provider. It exists so a test can install a stand-in and
+// clean up after itself; nothing in the running program unregisters anything.
+func Unregister(id ID) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(providers, id)
 }
 
 // Get returns the provider with this ID.

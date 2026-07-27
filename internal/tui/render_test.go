@@ -11,8 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/transfer"
 )
 
@@ -22,16 +21,16 @@ func plain(s string) string { return ansi.ReplaceAllString(s, "") }
 
 func fakeModel(t *testing.T, w, h int) model {
 	t.Helper()
-	m := newModel(claudedir.Paths{Home: "/Users/gowtham"}, "", transfer.Config{}, "0.5.0")
+	m := newModel("", transfer.Config{}, "0.5.0")
 	mm, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	m = mm.(model)
 	now := time.Now()
 	items := []list.Item{
-		sessionItem{claudedir.Session{ID: "8e3d21d1-aa11-4f00-9c0f-abc", ProjectPath: "/Users/gowtham/work/api-service", Title: "refactor the auth layer", Messages: 42, ModTime: now.Add(-2 * time.Hour)}},
-		sessionItem{claudedir.Session{ID: "1f9c77a2-bb22-4e11-8d1a-def", ProjectPath: "/Users/gowtham/side/claude-teleport", Title: "build the interactive TUI", Messages: 128, ModTime: now.Add(-25 * time.Hour)}},
-		sessionItem{claudedir.Session{ID: "44ab90ee-cc33-4d22-7e2b-ghi", ProjectPath: "/Users/gowtham/work/dash", Title: "fix the flaky pagination test", Messages: 9, ModTime: now.Add(-9 * time.Minute)}},
+		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "8e3d21d1-aa11-4f00-9c0f-abc", ShortID: "8e3d21d1", ProjectPath: "/Users/gowtham/work/api-service", Title: "refactor the auth layer", Messages: 42, ModTime: now.Add(-2 * time.Hour)}},
+		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "1f9c77a2-bb22-4e11-8d1a-def", ShortID: "1f9c77a2", ProjectPath: "/Users/gowtham/side/claude-teleport", Title: "build the interactive TUI", Messages: 128, ModTime: now.Add(-25 * time.Hour)}},
+		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "44ab90ee-cc33-4d22-7e2b-ghi", ShortID: "44ab90ee", ProjectPath: "/Users/gowtham/work/dash", Title: "fix the flaky pagination test", Messages: 9, ModTime: now.Add(-9 * time.Minute)}},
 	}
-	mm, _ = m.Update(sessionsMsg{items: items})
+	mm, _ = m.Update(sessionsMsg{items: items, tools: 1})
 	return mm.(model)
 }
 
@@ -44,9 +43,10 @@ func TestRenderScreens(t *testing.T) {
 	fmt.Println("\n################## HOME (session list) ##################")
 	fmt.Println(plain(m.View()))
 
-	m.prepped = &exporter.SessionBundle{
-		Name: "claude-teleport-session-8e3d21d1.tgz",
-		Preview: exporter.SharePreview{
+	m.prepped = &prepared{
+		provider: agent.ClaudeCode,
+		name:     "claude-teleport-session-8e3d21d1.tgz",
+		preview: agent.Preview{
 			Title: "refactor the auth layer", ShortID: "8e3d21d1",
 			ProjectPath: "/Users/gowtham/work/api-service",
 			Messages:    42, Bytes: 268_400, SecretsMasked: 3,
@@ -86,9 +86,10 @@ func TestRenderScreens(t *testing.T) {
 // wide glyphs), all lines must be equal width, or the border would not line up.
 func TestCardsRectangular(t *testing.T) {
 	m := fakeModel(t, 100, 40)
-	m.prepped = &exporter.SessionBundle{
-		Name:    "x.tgz",
-		Preview: exporter.SharePreview{Title: "refactor the auth layer", ShortID: "8e3d21d1", ProjectPath: "/Users/gowtham/work/api-service", Messages: 42, Bytes: 268_400, SecretsMasked: 3},
+	m.prepped = &prepared{
+		provider: agent.ClaudeCode,
+		name:     "x.tgz",
+		preview:  agent.Preview{Title: "refactor the auth layer", ShortID: "8e3d21d1", ProjectPath: "/Users/gowtham/work/api-service", Messages: 42, Bytes: 268_400, SecretsMasked: 3},
 	}
 	m.code, m.done, m.total, m.updLatest, m.status = "7-crossover-marbles", 180_000, 268_400, "0.6.0", "Receiving…"
 	m = m.startInput(modeRecvCode)
@@ -133,5 +134,69 @@ func TestCardsRectangular(t *testing.T) {
 		if !strings.Contains(plain(card), "CLAUDE_TELEPORT_RENDEZVOUS") {
 			t.Errorf("%s: the peer instruction must be visible, it is the actionable part", name)
 		}
+	}
+}
+
+// TestToolBadgeOnlyWhenMultipleTools: someone using one coding tool must see the
+// row exactly as before, so the tool name appears only when there is a choice.
+func TestToolBadgeOnlyWhenMultipleTools(t *testing.T) {
+	s := agent.Session{Provider: agent.Codex, ID: "019f9e34-be2e", ShortID: "019f9e34", Title: "refactor", Messages: 8, ProjectPath: "/w/api"}
+
+	solo := sessionItem{s: s, showTool: false}
+	if strings.Contains(solo.Description(), "codex") {
+		t.Errorf("single-tool row should not carry a tool name: %q", solo.Description())
+	}
+	multi := sessionItem{s: s, showTool: true}
+	if !strings.Contains(multi.Description(), "codex") {
+		t.Errorf("multi-tool row should name the tool: %q", multi.Description())
+	}
+	// The handle and counts must survive either way.
+	for _, d := range []string{solo.Description(), multi.Description()} {
+		if !strings.Contains(d, "019f9e34") || !strings.Contains(d, "8 msgs") {
+			t.Errorf("row lost its details: %q", d)
+		}
+	}
+}
+
+// TestFilterMatchesToolName lets "/codex" narrow the list to one tool.
+func TestFilterMatchesToolName(t *testing.T) {
+	it := sessionItem{s: agent.Session{Provider: agent.OpenCode, ID: "ses_1", Title: "hello", ProjectPath: "/w"}}
+	if !strings.Contains(it.FilterValue(), "opencode") {
+		t.Errorf("FilterValue should include the tool so search can narrow by it: %q", it.FilterValue())
+	}
+}
+
+// TestConfirmCardNamesTheTool: before a session leaves the machine, which tool it
+// came from is part of what the user is agreeing to.
+func TestConfirmCardNamesTheTool(t *testing.T) {
+	m := fakeModel(t, 100, 40)
+	m.prepped = &prepared{
+		provider: agent.Codex,
+		name:     "x.tgz",
+		preview:  agent.Preview{Title: "refactor", ShortID: "019f9e34", ProjectPath: "/w/api", Messages: 8, Bytes: 1024},
+	}
+	m.mode = modeConfirm
+	card := plain(m.confirmView())
+	if !strings.Contains(card, "OpenAI Codex CLI") {
+		t.Errorf("confirm card should name the tool:\n%s", card)
+	}
+	// And it must still be a rectangle with the extra row.
+	lines := strings.Split(m.confirmView(), "\n")
+	want := lipgloss.Width(lines[0])
+	for i, ln := range lines {
+		if got := lipgloss.Width(ln); got != want {
+			t.Fatalf("confirm card line %d width=%d, want %d", i, got, want)
+		}
+	}
+}
+
+// TestLoadProblemsSurface: if one tool cannot be read, say so rather than quietly
+// showing a short list the user has no way to question.
+func TestLoadProblemsSurface(t *testing.T) {
+	m := fakeModel(t, 100, 40)
+	mm, _ := m.Update(sessionsMsg{items: nil, tools: 1, problems: []string{"opencode: no such table: session"}})
+	got := mm.(model)
+	if !strings.Contains(got.notice, "opencode") {
+		t.Errorf("a read failure should be surfaced, notice = %q", got.notice)
 	}
 }
