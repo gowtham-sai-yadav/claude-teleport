@@ -264,3 +264,7 @@ CI runs on Linux, macOS, and Windows. Tagging `vX.Y.Z` builds and publishes the 
 ## License
 
 [MIT](LICENSE) © Gowtham Sai Yadav
+
+---
+
+<sub>An independent, unofficial community project. Not affiliated with, endorsed by, or sponsored by Anthropic. "Claude" and "Claude Code" are trademarks of Anthropic, PBC, used here only to describe what this tool works with.</sub>

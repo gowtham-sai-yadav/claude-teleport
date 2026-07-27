@@ -65,6 +65,10 @@ type PlanResult struct {
 	Mappings   []paths.Mapping `json:"mappings"`
 	Items      []PlanItem      `json:"items"`
 	Unmatched  []string        `json:"unmatched"` // --project values that matched nothing
+	// AttachedTo is set when a shared single session was pointed at the current
+	// directory because the caller gave no explicit placement. Callers report it
+	// so the user knows where the session landed.
+	AttachedTo string `json:"attachedTo,omitempty"`
 }
 
 // RunResult is what an executed import produced.
@@ -98,6 +102,12 @@ func LoadManifest(bundlePath string) (manifest.Manifest, error) {
 	if err := json.Unmarshal(mb, &man); err != nil {
 		return manifest.Manifest{}, fmt.Errorf("parse manifest: %w", err)
 	}
+	// Refuse a bundle from a newer release rather than half-understand it. Every
+	// import route (CLI, wormhole receive, web GUI, TUI) comes through here, so
+	// this is the one place the check has to live.
+	if err := man.Unsupported(); err != nil {
+		return manifest.Manifest{}, err
+	}
 	return man, nil
 }
 
@@ -115,6 +125,19 @@ func resolveTargets(tp claudedir.Paths, opts Options) (home, osName string) {
 
 // BuildPlan computes the full preview without touching the filesystem.
 func BuildPlan(man manifest.Manifest, tp claudedir.Paths, opts Options) *PlanResult {
+	// A shared single session belongs in the project the user is standing in, not
+	// wherever it lived on the sender's machine. This lives here rather than in
+	// any one caller because every entry point needs it: the CLI, the TUI, and the
+	// web GUI all build a plan, and when only the CLI applied the rule a session
+	// received in the TUI silently landed under the sender's remapped path.
+	attachedTo := ""
+	if man.IsSession() && len(opts.Maps) == 0 && opts.TargetHome == "" {
+		if cwd, err := os.Getwd(); err == nil && len(man.Projects) == 1 && man.Projects[0].OriginalPath != "" {
+			opts.Maps = []paths.Mapping{{Old: man.Projects[0].OriginalPath, New: cwd}}
+			attachedTo = cwd
+		}
+	}
+
 	targetHome, targetOS := resolveTargets(tp, opts)
 	mappings := buildMappings(man, targetHome, opts.Maps)
 	selEnc, all, unmatched := resolveSelection(man, opts.Projects)
@@ -126,6 +149,7 @@ func BuildPlan(man manifest.Manifest, tp claudedir.Paths, opts Options) *PlanRes
 		TargetHome: targetHome,
 		Mappings:   mappings,
 		Unmatched:  unmatched,
+		AttachedTo: attachedTo,
 	}
 	for _, pr := range man.Projects {
 		it := PlanItem{OldPath: pr.OriginalPath, OldEnc: pr.EncodedFolder, Sessions: pr.Sessions, HasMemory: pr.HasMemory}
@@ -317,18 +341,11 @@ func Run(opts Options) error {
 		return err
 	}
 
-	// A shared single session should land in the project the user is standing
-	// in, not wherever it lived on the sender's machine. When they gave no
-	// explicit mapping, map the session's source path to the current directory.
-	if man.IsSession() && len(opts.Maps) == 0 && opts.TargetHome == "" {
-		if cwd, err := os.Getwd(); err == nil && len(man.Projects) == 1 && man.Projects[0].OriginalPath != "" {
-			opts.Maps = []paths.Mapping{{Old: man.Projects[0].OriginalPath, New: cwd}}
-			fmt.Printf("Shared session. Attaching it to the current directory:\n  %s\n", cwd)
-			fmt.Println("(cd into the matching project first, or pass --map OLD=NEW to place it elsewhere.)")
-		}
-	}
-
 	plan := BuildPlan(man, tp, opts)
+	if plan.AttachedTo != "" {
+		fmt.Printf("Shared session. Attaching it to the current directory:\n  %s\n", plan.AttachedTo)
+		fmt.Println("(cd into the matching project first, or pass --map OLD=NEW to place it elsewhere.)")
+	}
 	printPlan(plan)
 	if len(plan.Unmatched) > 0 {
 		fmt.Printf("\nWarning: --project value(s) matched nothing: %s\n", strings.Join(plan.Unmatched, ", "))
