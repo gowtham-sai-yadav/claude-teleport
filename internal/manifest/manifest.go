@@ -16,8 +16,18 @@ const (
 	// because import writes into the user's home directory, misreading is not a
 	// harmless no-op. Raise MaxSupportedSchema only alongside code that can
 	// actually handle the new layout.
-	SchemaVersion      = 1
-	MaxSupportedSchema = 1
+	// SchemaVersion is what a Claude Code bundle is stamped with, and it must stay
+	// 1 forever: every released binary reads that layout, and bumping it would
+	// make older ones refuse bundles they can in fact handle.
+	SchemaVersion = 1
+
+	// SchemaVersionAgent is stamped on a bundle carrying another coding tool's
+	// session. It is higher than SchemaVersion on purpose, so a binary released
+	// before multi-tool support refuses the bundle outright instead of unpacking a
+	// layout it does not understand into someone's home directory.
+	SchemaVersionAgent = 2
+
+	MaxSupportedSchema = 2
 
 	// KindFull is a whole-machine backup; KindSession is a single shared session.
 	KindFull    = "full"
@@ -49,7 +59,36 @@ type Manifest struct {
 	Source        Source    `json:"source"`
 	Includes      []string  `json:"includes"`
 	Projects      []Project `json:"projects"`
+
+	// Agent names the coding tool whose session this is: "codex", "opencode", and
+	// so on. It is omitted for Claude Code, both because that is what every
+	// existing bundle looks like and so a Claude bundle keeps serialising exactly
+	// as it did before this field existed. Read it through AgentID, never directly.
+	Agent string `json:"agent,omitempty"`
+
+	// AgentVersion is the version of that tool on the sending machine, recorded so
+	// a confusing import can be diagnosed later. Advisory only.
+	AgentVersion string `json:"agentVersion,omitempty"`
+
+	// ProjectPath is the absolute directory the session belonged to on the sending
+	// machine. Claude bundles carry this in Projects; tools that do not organise
+	// sessions by project need somewhere plain to put it.
+	ProjectPath string `json:"projectPath,omitempty"`
 }
+
+// AgentID returns the coding tool this bundle came from, defaulting to Claude
+// Code. Every bundle written before the field existed is a Claude bundle, so an
+// empty value has to keep meaning that - the same convention Kind already uses.
+func (m Manifest) AgentID() string {
+	if m.Agent == "" {
+		return "claude-code"
+	}
+	return m.Agent
+}
+
+// IsForeignAgent reports whether this bundle carries a tool other than Claude
+// Code, and therefore needs that tool's provider to unpack it.
+func (m Manifest) IsForeignAgent() bool { return m.Agent != "" && m.Agent != "claude-code" }
 
 // IsSession reports whether this bundle carries a single shared session.
 func (m Manifest) IsSession() bool { return m.Kind == KindSession }

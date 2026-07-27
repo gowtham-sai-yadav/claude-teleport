@@ -227,10 +227,32 @@ async function getBin(): Promise<string | undefined> {
 // ---- talking to the CLI ----------------------------------------------------
 
 async function listSessions(bin: string): Promise<Session[]> {
-  const { stdout } = await pexecFile(bin, ['sessions', '--json', ...configArgs()], {
-    maxBuffer: 32 * 1024 * 1024,
-  });
+  const big = { maxBuffer: 32 * 1024 * 1024 };
+  const cfg = configArgs();
+
+  // Prefer every coding tool on the machine. Two reasons this is not simply the
+  // one call: a CLI older than --tool rejects the flag outright, and --config-dir
+  // names a single tool's directory so it cannot be combined with "all".
+  if (cfg.length === 0) {
+    try {
+      const { stdout } = await pexecFile(bin, ['sessions', '--json', '--tool', 'all'], big);
+      return JSON.parse(stdout) as Session[];
+    } catch {
+      // Fall through to the single-tool form rather than showing an empty list.
+    }
+  }
+  const { stdout } = await pexecFile(bin, ['sessions', '--json', ...cfg], big);
   return JSON.parse(stdout) as Session[];
+}
+
+// toolArgs tells the CLI which tool a session belongs to. Older CLIs do not know
+// --tool, so it is only added for a non-Claude session: a Claude session (or one
+// from a CLI too old to report a provider) keeps working against any version.
+function toolArgs(s: Session): string[] {
+  if (!s.provider || s.provider === 'claude-code') {
+    return [];
+  }
+  return ['--tool', s.provider];
 }
 
 function shellQuote(s: string): string {
@@ -354,9 +376,9 @@ async function itemMenu(node: SessionNode): Promise<void> {
     return;
   }
   if (action.act === 'send') {
-    runInTerminal('Teleport · send', bin, ['send', s.id, ...configArgs()]);
+    runInTerminal('Teleport · send', bin, ['send', s.id, ...toolArgs(s), ...configArgs()]);
   } else {
-    runInTerminal('Teleport · share', bin, ['share', s.id, ...configArgs()]);
+    runInTerminal('Teleport · share', bin, ['share', s.id, ...toolArgs(s), ...configArgs()]);
   }
 }
 
@@ -371,7 +393,7 @@ async function cmdSend(): Promise<void> {
   if (!bin) {
     return;
   }
-  runInTerminal('Teleport · send', bin, ['send', s.id, ...configArgs()]);
+  runInTerminal('Teleport · send', bin, ['send', s.id, ...toolArgs(s), ...configArgs()]);
   vscode.window.showInformationMessage('Read the code from the terminal to your teammate; they run "claude-teleport receive <code>".');
 }
 
@@ -384,7 +406,7 @@ async function cmdShare(): Promise<void> {
   if (!bin) {
     return;
   }
-  runInTerminal('Teleport · share', bin, ['share', s.id, ...configArgs()]);
+  runInTerminal('Teleport · share', bin, ['share', s.id, ...toolArgs(s), ...configArgs()]);
 }
 
 async function cmdReceive(): Promise<void> {
@@ -444,13 +466,13 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claude-teleport.sendItem', async (n: SessionNode) => {
       const bin = await getBin();
       if (bin) {
-        runInTerminal('Teleport · send', bin, ['send', n.session.id, ...configArgs()]);
+        runInTerminal('Teleport · send', bin, ['send', n.session.id, ...toolArgs(n.session), ...configArgs()]);
       }
     }),
     vscode.commands.registerCommand('claude-teleport.shareItem', async (n: SessionNode) => {
       const bin = await getBin();
       if (bin) {
-        runInTerminal('Teleport · share', bin, ['share', n.session.id, ...configArgs()]);
+        runInTerminal('Teleport · share', bin, ['share', n.session.id, ...toolArgs(n.session), ...configArgs()]);
       }
     }),
     vscode.commands.registerCommand('claude-teleport.copyItemId', async (n: SessionNode) => {

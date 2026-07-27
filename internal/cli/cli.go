@@ -20,6 +20,7 @@ import (
 	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/claudecode" // registers the Claude Code provider
 	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/codex"      // registers the Codex CLI provider
 	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/opencode"   // registers the opencode provider
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/agentshare"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
@@ -106,8 +107,8 @@ func printHelp() {
 		"  claude-teleport inspect <bundle>\n" +
 		"  claude-teleport verify  [--config-dir DIR]\n" +
 		"  claude-teleport sessions [--tool claude-code|codex|opencode|all] [--project P] [--config-dir DIR] [--json]\n" +
-		"  claude-teleport share   <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
-		"  claude-teleport send    <session-id-prefix | --last> [--project P] [--with-context] [--no-redact] [--yes]\n" +
+		"  claude-teleport share   <session-id-prefix | --last> [--tool T] [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
+		"  claude-teleport send    <session-id-prefix | --last> [--tool T] [--project P] [--with-context] [--no-redact] [--yes]\n" +
 		"  claude-teleport receive <code> [--config-dir DIR] [--map OLD=NEW]... [--yes]\n" +
 		"  claude-teleport update  [--check] [--yes]\n" +
 		"  claude-teleport gui     [bundle] [--port N]\n\n" +
@@ -172,7 +173,7 @@ func runImport(args []string) error {
 	if err != nil {
 		return err
 	}
-	return importer.Run(importer.Options{
+	return applyBundle(pos[0], importer.Options{
 		Bundle:     pos[0],
 		TargetHome: *home,
 		TargetOS:   *tos,
@@ -386,12 +387,13 @@ func filterSessions(in []agent.Session, needle string) []agent.Session {
 func runShare(args []string) error {
 	fs := flag.NewFlagSet("share", flag.ContinueOnError)
 	out := fs.String("out", "", "output file path")
-	cfg := fs.String("config-dir", "", "override the Claude config dir")
+	cfg := fs.String("config-dir", "", "override the selected tool's config dir")
 	last := fs.Bool("last", false, "share your most recent session")
 	project := fs.String("project", "", "disambiguate by project when the same id exists in more than one")
-	withContext := fs.Bool("with-context", false, "also include the project's memory/context files")
+	withContext := fs.Bool("with-context", false, "also include the project's memory/context files (Claude Code only)")
 	noRedact := fs.Bool("no-redact", false, "do NOT scrub secrets before packing (not recommended)")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt")
+	tool := fs.String("tool", string(agent.ClaudeCode), "which coding tool the session belongs to: "+strings.Join(agent.IDs(), ", "))
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
@@ -403,18 +405,140 @@ func runShare(args []string) error {
 	if prefix == "" && !*last {
 		return fmt.Errorf("usage: claude-teleport share <session-id-prefix | --last>")
 	}
-	return exporter.RunShare(exporter.ShareOptions{
-		ConfigDir:     *cfg,
-		Version:       Version(),
-		Out:           *out,
-		SessionPrefix: prefix,
-		Project:       *project,
-		Last:          *last,
-		WithContext:   *withContext,
-		Redact:        !*noRedact,
-		AssumeYes:     *yes,
-		Confirm:       confirmShare,
+
+	// Claude Code keeps its own long-standing path: its bundle layout is what every
+	// released binary reads, so it is deliberately left alone.
+	if agent.ID(*tool) == agent.ClaudeCode {
+		return exporter.RunShare(exporter.ShareOptions{
+			ConfigDir:     *cfg,
+			Version:       Version(),
+			Out:           *out,
+			SessionPrefix: prefix,
+			Project:       *project,
+			Last:          *last,
+			WithContext:   *withContext,
+			Redact:        !*noRedact,
+			AssumeYes:     *yes,
+			Confirm:       confirmShare,
+		})
+	}
+
+	if *withContext {
+		fmt.Println("Note: --with-context only applies to Claude Code; ignoring it.")
+	}
+	b, err := packForeign(*tool, *cfg, prefix, *project, *last, !*noRedact)
+	if err != nil {
+		return err
+	}
+	if !*yes && !confirmAgentShare(b, false) {
+		fmt.Println("Aborted - nothing was written.")
+		return nil
+	}
+	dest := *out
+	if dest == "" {
+		dest = b.Name
+	}
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	if err := b.WriteBundle(f); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	fmt.Printf("\nWrote %s\n", dest)
+	fmt.Printf("Your teammate imports it with: claude-teleport import %s\n", dest)
+	fmt.Printf("They need %s installed, and should run it from the project folder they want the session attached to.\n",
+		displayNameOf(*tool))
+	return nil
+}
+
+// packForeign resolves a session belonging to a non-Claude tool and packs it.
+func packForeign(tool, configDir, prefix, project string, last, redactOn bool) (*agentshare.Bundle, error) {
+	bound, err := agent.Resolve(agent.ID(tool), configDir)
+	if err != nil {
+		return nil, err
+	}
+	sessions, err := bound.Provider.ListSessions(bound.Roots)
+	if err != nil {
+		return nil, err
+	}
+	agent.SortSessions(sessions)
+	sessions = filterSessions(sessions, project)
+	s, err := pickSession(sessions, prefix, last, bound.Provider.DisplayName())
+	if err != nil {
+		return nil, err
+	}
+	return agentshare.Pack(bound.Provider, bound.Roots, s, agentshare.Options{
+		ToolVersion: Version(),
+		Redact:      redactOn,
 	})
+}
+
+// pickSession resolves an id prefix, or the most recent session with --last,
+// erroring clearly on nothing-matched and on an ambiguous prefix.
+func pickSession(sessions []agent.Session, prefix string, last bool, toolName string) (agent.Session, error) {
+	if len(sessions) == 0 {
+		return agent.Session{}, fmt.Errorf("no %s sessions found on this machine", toolName)
+	}
+	if last {
+		return sessions[0], nil // already newest-first
+	}
+	var hits []agent.Session
+	for _, s := range sessions {
+		if strings.HasPrefix(s.ID, prefix) {
+			hits = append(hits, s)
+		}
+	}
+	switch len(hits) {
+	case 1:
+		return hits[0], nil
+	case 0:
+		return agent.Session{}, fmt.Errorf("no %s session matches %q (see: claude-teleport sessions --tool %s)", toolName, prefix, toolName)
+	default:
+		var ids []string
+		for _, h := range hits {
+			ids = append(ids, h.ShortID)
+		}
+		return agent.Session{}, fmt.Errorf("%q matches %d sessions (%s); use a longer id", prefix, len(hits), strings.Join(ids, ", "))
+	}
+}
+
+func displayNameOf(tool string) string {
+	if p, ok := agent.Get(agent.ID(tool)); ok {
+		return p.DisplayName()
+	}
+	return tool
+}
+
+// confirmAgentShare shows what is about to leave the machine for a non-Claude
+// session. It mirrors confirmShare so the decision looks the same for every tool.
+func confirmAgentShare(b *agentshare.Bundle, overNetwork bool) bool {
+	where := "This writes a file you hand to your teammate."
+	if overNetwork {
+		where = "This streams over an end-to-end-encrypted connection."
+	}
+	fmt.Printf("About to share ONE %s session. This leaves your machine, so read it:\n", displayNameOf(string(b.Provider)))
+	fmt.Printf("  session : %s  (%s)\n", orUnknown(b.Preview.Title, "(untitled)"), b.Preview.ShortID)
+	fmt.Printf("  project : %s\n", orUnknown(b.Preview.ProjectPath, "(unknown)"))
+	fmt.Printf("  content : %d message(s), %s\n", b.Preview.Messages, exporter.HumanSize(b.Preview.Bytes))
+	fmt.Printf("  secrets : %d likely secret(s) masked (best effort, not a guarantee)\n", b.Preview.SecretsMasked)
+	fmt.Println("  " + where)
+	q := "Write this file?"
+	if overNetwork {
+		q = "Send it?"
+	}
+	return confirm(q)
+}
+
+func orUnknown(s, fallback string) string {
+	if strings.TrimSpace(s) == "" {
+		return fallback
+	}
+	return s
 }
 
 // confirmShare is passed into the exporter so the summary and prompt live in
@@ -452,6 +576,7 @@ func runSend(args []string) error {
 	relay := fs.String("relay", envOr("CLAUDE_TELEPORT_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
 	words := fs.Int("code-words", 2, "number of words in the transfer code")
 	timeout := fs.Duration("timeout", 15*time.Minute, "give up if the peer does not connect within this time")
+	tool := fs.String("tool", string(agent.ClaudeCode), "which coding tool the session belongs to: "+strings.Join(agent.IDs(), ", "))
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
@@ -464,27 +589,49 @@ func runSend(args []string) error {
 		return fmt.Errorf("usage: claude-teleport send <session-id-prefix | --last>")
 	}
 
-	b, err := exporter.PrepareShare(exporter.ShareOptions{
-		ConfigDir:     *cfg,
-		Version:       Version(),
-		SessionPrefix: prefix,
-		Project:       *project,
-		Last:          *last,
-		WithContext:   *withContext,
-		Redact:        !*noRedact,
-	})
-	if err != nil {
-		return err
-	}
-	if !*yes && !confirmSend(b.Preview) {
-		fmt.Println("Aborted - nothing was sent.")
-		return nil
-	}
-
-	// Build the bundle in memory so we can stream it straight into the wormhole.
-	var buf bytes.Buffer
-	if err := b.WriteBundle(&buf); err != nil {
-		return err
+	// The transfer itself does not care what is inside the bundle, so the only
+	// difference between tools is how the bundle gets built.
+	var (
+		buf      bytes.Buffer
+		sendName string
+	)
+	if agent.ID(*tool) == agent.ClaudeCode {
+		b, perr := exporter.PrepareShare(exporter.ShareOptions{
+			ConfigDir:     *cfg,
+			Version:       Version(),
+			SessionPrefix: prefix,
+			Project:       *project,
+			Last:          *last,
+			WithContext:   *withContext,
+			Redact:        !*noRedact,
+		})
+		if perr != nil {
+			return perr
+		}
+		if !*yes && !confirmSend(b.Preview) {
+			fmt.Println("Aborted - nothing was sent.")
+			return nil
+		}
+		if err := b.WriteBundle(&buf); err != nil {
+			return err
+		}
+		sendName = b.Name
+	} else {
+		if *withContext {
+			fmt.Println("Note: --with-context only applies to Claude Code; ignoring it.")
+		}
+		b, perr := packForeign(*tool, *cfg, prefix, *project, *last, !*noRedact)
+		if perr != nil {
+			return perr
+		}
+		if !*yes && !confirmAgentShare(b, true) {
+			fmt.Println("Aborted - nothing was sent.")
+			return nil
+		}
+		if err := b.WriteBundle(&buf); err != nil {
+			return err
+		}
+		sendName = b.Name
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -494,7 +641,7 @@ func runSend(args []string) error {
 
 	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, CodeWords: *words, OnFallback: printFallback}
 	fmt.Println("Preparing a secure transfer...")
-	err = transfer.Send(ctx, tcfg, b.Name, bytes.NewReader(buf.Bytes()),
+	err = transfer.Send(ctx, tcfg, sendName, bytes.NewReader(buf.Bytes()),
 		func(code string) {
 			fmt.Printf("\nGive your teammate this code:\n\n    %s\n\n", code)
 			fmt.Println("They run this from inside their copy of the project:")
@@ -569,7 +716,7 @@ func runReceive(args []string) error {
 	}
 	fmt.Println()
 
-	return importer.Run(importer.Options{
+	return applyBundle(tmpPath, importer.Options{
 		Bundle:     tmpPath,
 		TargetHome: *home,
 		TargetOS:   *tos,
@@ -579,6 +726,42 @@ func runReceive(args []string) error {
 		AssumeYes:  *yes,
 		Maps:       parsedMaps,
 	})
+}
+
+// applyBundle routes a bundle to whichever tool owns it. The sender's tool is
+// recorded in the manifest, so a receiver never has to be told which flag to pass:
+// `receive` and `import` work the same regardless of where the session came from.
+func applyBundle(bundlePath string, opts importer.Options) error {
+	id, foreign, err := agentshare.PeekAgent(bundlePath)
+	if err != nil {
+		return err
+	}
+	if !foreign {
+		return importer.Run(opts)
+	}
+
+	// A foreign session attaches to the directory the receiver is standing in,
+	// which is the same rule Claude shared sessions follow.
+	targetDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	name := displayNameOf(string(id))
+	fmt.Printf("This is a %s session. Attaching it to the current directory:\n  %s\n", name, targetDir)
+	if !opts.AssumeYes && !confirm("Import it here?") {
+		fmt.Println("Aborted - nothing was written.")
+		return nil
+	}
+	res, err := agentshare.Unpack(bundlePath, targetDir, opts.ConfigDir)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nDone. Imported one %s session.\n", res.DisplayName)
+	if res.ResumeHint != "" {
+		fmt.Printf("Carry on with:\n    %s\n", res.ResumeHint)
+	}
+	fmt.Println("\nIMPORTANT: your login was NOT transferred - credentials never are.")
+	return nil
 }
 
 // confirmSend shows what is about to leave the machine over the network and
