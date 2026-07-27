@@ -26,7 +26,12 @@ const REPO = 'gowtham-sai-yadav/claude-teleport';
 // older is treated as unusable and a newer build is fetched instead.
 const MIN_VERSION: [number, number, number] = [0, 5, 1];
 
+// Session mirrors the CLI's `sessions --json` output. The CLI treats these keys
+// as a stable contract and only ever adds to them, so an older extension keeps
+// working against a newer CLI. `provider` says which coding tool recorded the
+// session; it is optional here so this build also tolerates a CLI predating it.
 interface Session {
+  provider?: string;
   id: string;
   shortId: string;
   project: string;
@@ -35,6 +40,15 @@ interface Session {
   modified: string;
   sizeBytes: number;
   title: string;
+}
+
+// providerLabel is the short badge shown next to a session, omitted for Claude
+// Code so the common case stays uncluttered.
+function providerLabel(s: Session): string {
+  if (!s.provider || s.provider === 'claude-code') {
+    return '';
+  }
+  return ` · ${s.provider}`;
 }
 
 let extContext: vscode.ExtensionContext;
@@ -265,7 +279,7 @@ async function pickSession(placeHolder: string): Promise<Session | undefined> {
   }
   const items: SessionItem[] = sessions.map((s) => ({
     label: s.title || '(untitled session)',
-    description: `${s.shortId} · ${s.messages} msgs`,
+    description: `${s.shortId} · ${s.messages} msgs${providerLabel(s)}`,
     detail: s.project || '(unknown project)',
     session: s,
   }));
@@ -282,7 +296,7 @@ async function pickSession(placeHolder: string): Promise<Session | undefined> {
 class SessionNode extends vscode.TreeItem {
   constructor(public readonly session: Session) {
     super(session.title || '(untitled session)', vscode.TreeItemCollapsibleState.None);
-    this.description = `${session.shortId} · ${session.messages} msgs`;
+    this.description = `${session.shortId} · ${session.messages} msgs${providerLabel(session)}`;
     this.tooltip = `${session.title || '(untitled)'}\n${session.project || '(unknown project)'}\n${session.messages} messages`;
     this.contextValue = 'session';
     this.iconPath = new vscode.ThemeIcon('comment-discussion');

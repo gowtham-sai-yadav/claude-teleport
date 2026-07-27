@@ -211,6 +211,33 @@ func runVerify(args []string) error {
 	return nil
 }
 
+// ProviderClaudeCode names the coding tool a session belongs to. It is the only
+// value emitted today; the identifier is stable because it travels in output
+// other programs parse.
+const ProviderClaudeCode = "claude-code"
+
+// SessionJSON is the shape `sessions --json` emits, one element per session.
+//
+// PUBLIC CONTRACT. The editor extension and anything else scripting this command
+// parses it, and a released extension keeps running against newer CLIs, so:
+// fields may be ADDED (unknown keys are ignored by consumers), but no existing
+// key may be renamed, removed, or change meaning. Adding a field is safe;
+// changing one is a breaking release.
+type SessionJSON struct {
+	// Provider is which coding tool recorded the session. Emitted from the
+	// start so consumers can branch on it before more tools are supported,
+	// rather than needing an update at that point.
+	Provider  string `json:"provider"`
+	ID        string `json:"id"`
+	ShortID   string `json:"shortId"`
+	Project   string `json:"project"`
+	Folder    string `json:"folder"`
+	Messages  int    `json:"messages"`
+	Modified  string `json:"modified"`
+	SizeBytes int64  `json:"sizeBytes"`
+	Title     string `json:"title"`
+}
+
 func runSessions(args []string) error {
 	fs := flag.NewFlagSet("sessions", flag.ContinueOnError)
 	cfg := fs.String("config-dir", "", "override the Claude config dir")
@@ -230,20 +257,11 @@ func runSessions(args []string) error {
 	sessions = filterSessions(sessions, *project)
 
 	if *asJSON {
-		type sessionJSON struct {
-			ID        string `json:"id"`
-			ShortID   string `json:"shortId"`
-			Project   string `json:"project"`
-			Folder    string `json:"folder"`
-			Messages  int    `json:"messages"`
-			Modified  string `json:"modified"`
-			SizeBytes int64  `json:"sizeBytes"`
-			Title     string `json:"title"`
-		}
-		list := make([]sessionJSON, 0, len(sessions))
+		list := make([]SessionJSON, 0, len(sessions))
 		for _, s := range sessions {
-			list = append(list, sessionJSON{
-				ID: s.ID, ShortID: s.ShortID(), Project: s.ProjectPath, Folder: s.Folder,
+			list = append(list, SessionJSON{
+				Provider: ProviderClaudeCode,
+				ID:       s.ID, ShortID: s.ShortID(), Project: s.ProjectPath, Folder: s.Folder,
 				Messages: s.Messages, Modified: s.ModTime.Format(time.RFC3339), SizeBytes: s.Size, Title: s.Title,
 			})
 		}
