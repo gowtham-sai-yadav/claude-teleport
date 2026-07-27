@@ -377,15 +377,13 @@ func waitForEvent(ch chan tea.Msg) tea.Cmd {
 // emit blocks; used for rare, must-not-drop messages (code, status, done).
 func emit(ch chan tea.Msg, msg tea.Msg) { ch <- msg }
 
-// withFallbackNotice attaches a callback that surfaces a transfer-server switch
-// in the UI. The peer instruction is the important half: two people only meet on
-// the same mailbox, and a mismatch looks like waiting forever, not an error.
+// withFallbackNotice surfaces a transfer-server switch in the UI. There is
+// nothing for the user to do about it: receiving tries both mailboxes at once, so
+// the two sides still meet whichever one answered.
 func withFallbackNotice(ch chan tea.Msg, cfg transfer.Config) transfer.Config {
-	cfg.OnFallback = func(mailbox, relay string, _ error) {
-		emit(ch, noticeMsg("This network blocked the usual transfer server, so I switched to a backup.\n"+
-			"The other side must run these first, or you will not find each other:\n"+
-			"  export CLAUDE_TELEPORT_RENDEZVOUS="+mailbox+"\n"+
-			"  export CLAUDE_TELEPORT_RELAY="+relay))
+	cfg.OnFallback = func(mailbox, _ string, _ error) {
+		emit(ch, noticeMsg("The usual transfer server was not responding, so I switched to a backup.\n"+
+			"Your teammate does not need to change anything."))
 	}
 	return cfg
 }

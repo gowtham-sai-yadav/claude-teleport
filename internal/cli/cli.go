@@ -784,14 +784,15 @@ func confirmSend(preview exporter.SharePreview) bool {
 	return confirm("Send it?")
 }
 
-// printFallback explains that the usual transfer server was unreachable and we
-// switched to the TLS one. The peer instructions matter as much as the notice:
-// two people only meet on the same mailbox, and a mismatch looks like waiting
-// forever rather than an error.
-func printFallback(mailbox, relay string, _ error) {
-	fmt.Println("\nThis network blocked the usual transfer server, so I switched to a backup.")
-	fmt.Println("The other side has to use the same one. Have them run this first:")
-	fmt.Printf("\n    export CLAUDE_TELEPORT_RENDEZVOUS=%s\n    export CLAUDE_TELEPORT_RELAY=%s\n\n", mailbox, relay)
+// printFallback explains that the usual transfer server did not answer and we
+// moved to the alternate. Deliberately no instructions for the other side:
+// receiving tries both mailboxes at once, so it finds the sender either way, and
+// asking someone to export environment variables mid-handoff is friction that no
+// longer buys anything.
+func printFallback(mailbox, _ string, _ error) {
+	fmt.Println("\nThe usual transfer server was not responding, so I switched to a backup.")
+	fmt.Printf("(%s)\n", mailbox)
+	fmt.Println("Your teammate does not need to change anything.")
 }
 
 // progressPrinter returns a progress callback that rewrites a single status

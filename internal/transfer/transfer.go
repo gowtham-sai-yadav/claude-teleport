@@ -22,6 +22,8 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/psanford/wormhole-william/wormhole"
 )
@@ -48,6 +50,25 @@ const (
 	FallbackTransitRelay  = "relay.mw.leastauthority.com:4001"
 )
 
+// handshakeTimeout bounds how long the default mailbox gets to produce a code
+// before we give up on it and try the alternate.
+//
+// This exists because of a failure that a connection error cannot describe: the
+// public default has been observed accepting the TCP connection, answering an
+// ordinary HTTP request with 200, and then never completing the wormhole
+// handshake. Nothing fails, so retrying "on error" never triggers - the user just
+// watches a spinner. Waiting for a code, rather than waiting for an error, is the
+// only thing that catches it.
+//
+// A healthy send reaches its code in about 3.6 seconds end to end (measured, and
+// that figure includes process start and building the bundle), so this leaves
+// roughly three times the margin. It only ever delays the failure case.
+const handshakeTimeout = 10 * time.Second
+
+// errHandshakeStalled means the mailbox accepted a connection but never got as far
+// as issuing a code.
+var errHandshakeStalled = errors.New("the transfer server accepted the connection but stopped responding")
+
 // Config selects the infrastructure a transfer uses. Zero values use the public
 // magic-wormhole servers; set these to point at servers you host so you depend
 // on no one else's uptime and your ciphertext transits only your own relay.
@@ -61,17 +82,27 @@ type Config struct {
 	// because an explicit choice of server is always honoured as given.
 	NoFallback bool
 
-	// OnFallback, if set, is called once just before a retry on the alternate
-	// servers, with the cause of the original failure. Callers use it to tell
-	// the user what happened - which matters, because the peer must be pointed
-	// at the same mailbox or the two will never meet.
+	// testPrimary and testFallback replace the public endpoints without counting as
+	// a user's explicit choice, so a test can point the whole fallback-and-race
+	// path at local servers. They are unexported: only this package's tests can set
+	// them, and a caller cannot reach them at all.
+	testPrimary  string
+	testFallback string
+
+	// OnFallback, if set, is called once when a transfer moves to the alternate
+	// servers, with the cause. It is for telling the user what happened; no action
+	// is needed from either side, because Receive tries both mailboxes at once and
+	// finds the sender on whichever one answered.
 	OnFallback func(mailbox, relay string, cause error)
 }
 
 func (c Config) client() *wormhole.Client {
 	cl := &wormhole.Client{AppID: AppID}
-	if c.RendezvousURL != "" {
+	switch {
+	case c.RendezvousURL != "":
 		cl.RendezvousURL = c.RendezvousURL
+	case c.testPrimary != "":
+		cl.RendezvousURL = c.testPrimary
 	}
 	if c.TransitRelay != "" {
 		cl.TransitRelayAddress = c.TransitRelay
@@ -94,6 +125,9 @@ func (c Config) canFallback() bool {
 func (c Config) withFallback() Config {
 	out := c
 	out.RendezvousURL = FallbackRendezvousURL
+	if c.testFallback != "" {
+		out.RendezvousURL = c.testFallback
+	}
 	if out.TransitRelay == "" {
 		out.TransitRelay = FallbackTransitRelay
 	}
@@ -164,8 +198,11 @@ func unreachable(primary, fallback string, err error) error {
 
 // primaryMailbox names the mailbox a config will actually use, for messages.
 func (c Config) primaryMailbox() string {
-	if c.RendezvousURL != "" {
+	switch {
+	case c.RendezvousURL != "":
 		return c.RendezvousURL
+	case c.testPrimary != "":
+		return c.testPrimary
 	}
 	return wormhole.DefaultRendezvousURL
 }
@@ -182,28 +219,80 @@ type Progress func(done, total int64)
 // non-standard port - Send retries once over TLS/443 and reports the switch
 // through cfg.OnFallback. The peer must then use the same mailbox.
 func Send(ctx context.Context, cfg Config, name string, r io.ReadSeeker, onCode func(code string), progress Progress) error {
-	err := sendOnce(ctx, cfg, name, r, onCode, progress)
-	if err == nil || !cfg.canFallback() || !isReachabilityError(err) {
+	// A server the user named is used exactly as given: no second-guessing, and no
+	// silently routing their data somewhere they did not choose.
+	if !cfg.canFallback() {
+		return sendOnce(ctx, cfg, name, r, onCode, progress)
+	}
+
+	err := attemptSend(ctx, cfg, name, r, onCode, progress)
+	if err == nil || !worthRetryingElsewhere(err) {
 		return err
 	}
+
 	fb := cfg.withFallback()
-	// The bundle may have been partially consumed before the failure surfaced,
-	// and the protocol streams from the current offset. Without a clean rewind
-	// a retry would send a truncated archive, so report the original failure
-	// instead of risking that.
+	// The bundle may have been partially consumed before the failure surfaced, and
+	// the protocol streams from the current offset. Without a clean rewind a retry
+	// would send a truncated archive, so report the original failure rather than
+	// risk that.
 	if _, serr := r.Seek(0, io.SeekStart); serr != nil {
 		return unreachable(cfg.primaryMailbox(), "", err)
 	}
 	if cfg.OnFallback != nil {
 		cfg.OnFallback(fb.RendezvousURL, fb.TransitRelay, err)
 	}
+	// The alternate gets whatever time the caller allowed, unbounded by the
+	// handshake window: once it answers, the wait is for the peer, not the server.
 	if ferr := sendOnce(ctx, fb, name, r, onCode, progress); ferr != nil {
-		if isReachabilityError(ferr) {
+		if worthRetryingElsewhere(ferr) {
 			return unreachable(cfg.primaryMailbox(), fb.RendezvousURL, ferr)
 		}
 		return ferr
 	}
 	return nil
+}
+
+// attemptSend runs one send, giving the server only handshakeTimeout to produce a
+// code. Once a code exists the handshake has plainly worked, so the deadline is
+// dropped and the send runs for as long as the caller's context allows - the
+// remaining wait is for a human to type the code, which can take minutes.
+func attemptSend(ctx context.Context, cfg Config, name string, r io.ReadSeeker, onCode func(code string), progress Progress) error {
+	attemptCtx, abandon := context.WithCancel(ctx)
+	defer abandon()
+
+	coded := make(chan struct{})
+	var once sync.Once
+	announce := func(code string) {
+		once.Do(func() { close(coded) })
+		if onCode != nil {
+			onCode(code)
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- sendOnce(attemptCtx, cfg, name, r, announce, progress) }()
+
+	timer := time.NewTimer(handshakeTimeout)
+	defer timer.Stop()
+
+	select {
+	case err := <-done:
+		return err // finished or failed before any code appeared
+	case <-coded:
+		return <-done // committed to this server; wait as long as the caller allows
+	case <-timer.C:
+		abandon()
+		<-done // let the attempt unwind before reusing the reader
+		return errHandshakeStalled
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// worthRetryingElsewhere reports whether a failure is about reaching the server,
+// as opposed to something a different server would fail at identically.
+func worthRetryingElsewhere(err error) bool {
+	return errors.Is(err, errHandshakeStalled) || isReachabilityError(err)
 }
 
 func sendOnce(ctx context.Context, cfg Config, name string, r io.ReadSeeker, onCode func(code string), progress Progress) error {
@@ -253,22 +342,82 @@ func (in *Incoming) Read(p []byte) (int, error) { return in.r.Read(p) }
 // sides fall back on the same trigger, so two people on the same blocked network
 // still meet without either of them configuring anything.
 func Receive(ctx context.Context, cfg Config, code string) (*Incoming, error) {
-	in, err := receiveOnce(ctx, cfg, code)
-	if err == nil || !cfg.canFallback() || !isReachabilityError(err) {
-		return in, err
+	if !cfg.canFallback() {
+		return receiveOnce(ctx, cfg, code)
 	}
+
+	// Both mailboxes are tried at once, and whichever one the sender is waiting on
+	// answers. A timeout cannot be used here the way it can when sending: a
+	// receiver legitimately waits minutes for a teammate to run the command, so
+	// "slow" and "broken" look identical from this side.
+	//
+	// Racing also removes the need for the two people to agree on a server. On the
+	// mailbox the sender did not use, the code's slot simply never appears, so that
+	// attempt waits harmlessly until it is abandoned.
+	primary := cfg
 	fb := cfg.withFallback()
-	if cfg.OnFallback != nil {
-		cfg.OnFallback(fb.RendezvousURL, fb.TransitRelay, err)
+
+	type result struct {
+		in       *Incoming
+		err      error
+		fallback bool
 	}
-	in, ferr := receiveOnce(ctx, fb, code)
-	if ferr != nil {
-		if isReachabilityError(ferr) {
-			return nil, unreachable(cfg.primaryMailbox(), fb.RendezvousURL, ferr)
+	results := make(chan result, 2)
+
+	ctxA, stopA := context.WithCancel(ctx)
+	ctxB, stopB := context.WithCancel(ctx)
+
+	// The winner's context must outlive this function: the caller has not read the
+	// stream yet, and cancelling it here would tear down the transfer we just
+	// found. So the loser is stopped immediately and the winner is released only
+	// when the caller's own context ends, which the caller controls.
+	releaseWith := func(stop context.CancelFunc) {
+		go func() {
+			<-ctx.Done()
+			stop()
+		}()
+	}
+
+	go func() {
+		in, err := receiveOnce(ctxA, primary, code)
+		results <- result{in: in, err: err}
+	}()
+	go func() {
+		in, err := receiveOnce(ctxB, fb, code)
+		results <- result{in: in, err: err, fallback: true}
+	}()
+
+	var firstErr error
+	for i := 0; i < 2; i++ {
+		res := <-results
+		if res.err == nil {
+			if res.fallback {
+				stopA()
+				releaseWith(stopB)
+				if cfg.OnFallback != nil {
+					cfg.OnFallback(fb.RendezvousURL, fb.TransitRelay, errHandshakeStalled)
+				}
+			} else {
+				stopB()
+				releaseWith(stopA)
+			}
+			return res.in, nil
 		}
-		return nil, ferr
+		// A cancellation here is this function stopping its own loser, not a failure
+		// worth reporting to the user.
+		if firstErr == nil && !errors.Is(res.err, context.Canceled) {
+			firstErr = res.err
+		}
 	}
-	return in, nil
+	stopA()
+	stopB()
+	if firstErr == nil {
+		firstErr = errHandshakeStalled
+	}
+	if worthRetryingElsewhere(firstErr) {
+		return nil, unreachable(cfg.primaryMailbox(), fb.RendezvousURL, firstErr)
+	}
+	return nil, firstErr
 }
 
 func receiveOnce(ctx context.Context, cfg Config, code string) (*Incoming, error) {
