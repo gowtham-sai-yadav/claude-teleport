@@ -16,21 +16,21 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
-	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/claudecode" // registers the Claude Code provider
-	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/codex"      // registers the Codex CLI provider
-	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/opencode"   // registers the opencode provider
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agentshare"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/importer"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/transfer"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/tui"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/updater"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/webui"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
+	_ "github.com/gowtham-sai-yadav/entangle/internal/agent/claudecode" // registers the Claude Code provider
+	_ "github.com/gowtham-sai-yadav/entangle/internal/agent/codex"      // registers the Codex CLI provider
+	_ "github.com/gowtham-sai-yadav/entangle/internal/agent/opencode"   // registers the opencode provider
+	"github.com/gowtham-sai-yadav/entangle/internal/agentshare"
+	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
+	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
+	"github.com/gowtham-sai-yadav/entangle/internal/exporter"
+	"github.com/gowtham-sai-yadav/entangle/internal/importer"
+	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
+	"github.com/gowtham-sai-yadav/entangle/internal/paths"
+	"github.com/gowtham-sai-yadav/entangle/internal/transfer"
+	"github.com/gowtham-sai-yadav/entangle/internal/tui"
+	"github.com/gowtham-sai-yadav/entangle/internal/updater"
+	"github.com/gowtham-sai-yadav/entangle/internal/webui"
 	"golang.org/x/term"
 )
 
@@ -54,6 +54,7 @@ func Version() string {
 }
 
 func Run(args []string) error {
+	noticeIfLegacyName()
 	if len(args) == 0 {
 		// With a terminal attached, the friendliest default is the interactive
 		// cockpit; piped or redirected, fall back to plain help text.
@@ -87,7 +88,7 @@ func Run(args []string) error {
 	case "tui", "ui":
 		return runTUI(args[1:])
 	case "version", "-v", "--version":
-		fmt.Println("claude-teleport", Version())
+		fmt.Println("entangle", Version())
 		return nil
 	case "help", "-h", "--help":
 		printHelp()
@@ -98,20 +99,20 @@ func Run(args []string) error {
 }
 
 func printHelp() {
-	fmt.Print("claude-teleport " + Version() + " - move your Claude Code history between machines\n\n" +
+	fmt.Print("entangle " + Version() + " - move your Claude Code history between machines\n\n" +
 		"USAGE:\n" +
-		"  claude-teleport                 open the interactive cockpit (default with a terminal)\n" +
-		"  claude-teleport tui             open the interactive cockpit explicitly\n" +
-		"  claude-teleport export  [--out FILE] [--config-dir DIR]\n" +
-		"  claude-teleport import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
-		"  claude-teleport inspect <bundle>\n" +
-		"  claude-teleport verify  [--config-dir DIR]\n" +
-		"  claude-teleport sessions [--tool claude-code|codex|opencode|all] [--project P] [--config-dir DIR] [--json]\n" +
-		"  claude-teleport share   <session-id-prefix | --last> [--tool T] [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
-		"  claude-teleport send    <session-id-prefix | --last> [--tool T] [--project P] [--with-context] [--no-redact] [--yes]\n" +
-		"  claude-teleport receive <code> [--config-dir DIR] [--map OLD=NEW]... [--yes]\n" +
-		"  claude-teleport update  [--check] [--yes]\n" +
-		"  claude-teleport gui     [bundle] [--port N]\n\n" +
+		"  entangle                 open the interactive cockpit (default with a terminal)\n" +
+		"  entangle tui             open the interactive cockpit explicitly\n" +
+		"  entangle export  [--out FILE] [--config-dir DIR]\n" +
+		"  entangle import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
+		"  entangle inspect <bundle>\n" +
+		"  entangle verify  [--config-dir DIR]\n" +
+		"  entangle sessions [--tool claude-code|codex|opencode|all] [--project P] [--config-dir DIR] [--json]\n" +
+		"  entangle share   <session-id-prefix | --last> [--tool T] [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
+		"  entangle send    <session-id-prefix | --last> [--tool T] [--project P] [--with-context] [--no-redact] [--yes]\n" +
+		"  entangle receive <code> [--config-dir DIR] [--map OLD=NEW]... [--yes]\n" +
+		"  entangle update  [--check] [--yes]\n" +
+		"  entangle gui     [bundle] [--port N]\n\n" +
 		"EXPORT runs on the OLD machine and writes a portable bundle.\n" +
 		"IMPORT runs on the NEW machine and restores it, translating paths for this OS\n" +
 		"(Linux, macOS, or Windows - drive letters and backslashes handled).\n" +
@@ -167,7 +168,7 @@ func runImport(args []string) error {
 		return err
 	}
 	if len(pos) < 1 {
-		return fmt.Errorf("usage: claude-teleport import <bundle> [flags]")
+		return fmt.Errorf("usage: entangle import <bundle> [flags]")
 	}
 	parsed, err := parseMaps(maps)
 	if err != nil {
@@ -309,7 +310,7 @@ func runSessions(args []string) error {
 			s.ShortID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, proj, s.Title)
 	}
 	tw.Flush()
-	fmt.Printf("\n%d session(s). Share one with: claude-teleport share <ID>\n", len(sessions))
+	fmt.Printf("\n%d session(s). Share one with: entangle share <ID>\n", len(sessions))
 	if nonClaude > 0 {
 		// Say plainly what does not work yet, rather than letting someone discover
 		// it when share fails on a session this command just offered them.
@@ -403,7 +404,7 @@ func runShare(args []string) error {
 		prefix = pos[0]
 	}
 	if prefix == "" && !*last {
-		return fmt.Errorf("usage: claude-teleport share <session-id-prefix | --last>")
+		return fmt.Errorf("usage: entangle share <session-id-prefix | --last>")
 	}
 
 	// Claude Code keeps its own long-standing path: its bundle layout is what every
@@ -450,7 +451,7 @@ func runShare(args []string) error {
 		return err
 	}
 	fmt.Printf("\nWrote %s\n", dest)
-	fmt.Printf("Your teammate imports it with: claude-teleport import %s\n", dest)
+	fmt.Printf("Your teammate imports it with: entangle import %s\n", dest)
 	fmt.Printf("They need %s installed, and should run it from the project folder they want the session attached to.\n",
 		displayNameOf(*tool))
 	return nil
@@ -497,7 +498,7 @@ func pickSession(sessions []agent.Session, prefix string, last bool, toolName st
 	case 1:
 		return hits[0], nil
 	case 0:
-		return agent.Session{}, fmt.Errorf("no %s session matches %q (see: claude-teleport sessions --tool %s)", toolName, prefix, toolName)
+		return agent.Session{}, fmt.Errorf("no %s session matches %q (see: entangle sessions --tool %s)", toolName, prefix, toolName)
 	default:
 		var ids []string
 		for _, h := range hits {
@@ -572,8 +573,8 @@ func runSend(args []string) error {
 	withContext := fs.Bool("with-context", false, "also include the project's memory/context files")
 	noRedact := fs.Bool("no-redact", false, "do NOT scrub secrets before sending (not recommended)")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt")
-	rendezvous := fs.String("rendezvous", envOr("CLAUDE_TELEPORT_RENDEZVOUS", ""), "rendezvous server URL (default: public magic-wormhole)")
-	relay := fs.String("relay", envOr("CLAUDE_TELEPORT_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
+	rendezvous := fs.String("rendezvous", envOr("ENTANGLE_RENDEZVOUS", ""), "rendezvous server URL (default: public magic-wormhole)")
+	relay := fs.String("relay", envOr("ENTANGLE_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
 	words := fs.Int("code-words", 2, "number of words in the transfer code")
 	timeout := fs.Duration("timeout", 15*time.Minute, "give up if the peer does not connect within this time")
 	tool := fs.String("tool", string(agent.ClaudeCode), "which coding tool the session belongs to: "+strings.Join(agent.IDs(), ", "))
@@ -586,7 +587,7 @@ func runSend(args []string) error {
 		prefix = pos[0]
 	}
 	if prefix == "" && !*last {
-		return fmt.Errorf("usage: claude-teleport send <session-id-prefix | --last>")
+		return fmt.Errorf("usage: entangle send <session-id-prefix | --last>")
 	}
 
 	// The transfer itself does not care what is inside the bundle, so the only
@@ -645,7 +646,7 @@ func runSend(args []string) error {
 		func(code string) {
 			fmt.Printf("\nGive your teammate this code:\n\n    %s\n\n", code)
 			fmt.Println("They run this from inside their copy of the project:")
-			fmt.Printf("    claude-teleport receive %s\n\n", code)
+			fmt.Printf("    entangle receive %s\n\n", code)
 			fmt.Println("Waiting for them to connect... (press Ctrl-C to cancel)")
 		},
 		progressPrinter("Sending"),
@@ -667,8 +668,8 @@ func runReceive(args []string) error {
 	yes := fs.Bool("yes", false, "skip the import confirmation prompt")
 	home := fs.String("target-home", "", "override the target home directory")
 	tos := fs.String("target-os", "", "render paths for this OS: linux|darwin|windows")
-	rendezvous := fs.String("rendezvous", envOr("CLAUDE_TELEPORT_RENDEZVOUS", ""), "rendezvous server URL (default: public magic-wormhole)")
-	relay := fs.String("relay", envOr("CLAUDE_TELEPORT_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
+	rendezvous := fs.String("rendezvous", envOr("ENTANGLE_RENDEZVOUS", ""), "rendezvous server URL (default: public magic-wormhole)")
+	relay := fs.String("relay", envOr("ENTANGLE_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
 	timeout := fs.Duration("timeout", 15*time.Minute, "give up if the transfer does not start within this time")
 	var maps multiFlag
 	fs.Var(&maps, "map", "remap OLD=NEW path prefix (repeatable)")
@@ -677,7 +678,7 @@ func runReceive(args []string) error {
 		return err
 	}
 	if len(pos) < 1 {
-		return fmt.Errorf("usage: claude-teleport receive <code>")
+		return fmt.Errorf("usage: entangle receive <code>")
 	}
 	code := pos[0]
 	parsedMaps, err := parseMaps(maps)
@@ -699,7 +700,7 @@ func runReceive(args []string) error {
 
 	// Stream to a temp bundle, capped so a peer that lies about the size cannot
 	// fill the disk. The importer then treats it exactly like a shared file.
-	tmp, err := os.CreateTemp("", "claude-teleport-recv-*.tgz")
+	tmp, err := os.CreateTemp("", "entangle-recv-*.tgz")
 	if err != nil {
 		return err
 	}
@@ -830,9 +831,20 @@ func copyCapped(dst io.Writer, src io.Reader, total, limit int64, prog transfer.
 	}
 }
 
+// envOr reads an ENTANGLE_* setting, falling back to the CLAUDE_TELEPORT_*
+// spelling this project used before it was renamed.
+//
+// People put these in shell profiles and CI config, and a rename is no reason to
+// silently stop honouring what they already wrote. The old names keep working
+// until a release well after the rename has settled.
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	if legacy, ok := strings.CutPrefix(key, "ENTANGLE_"); ok {
+		if v := os.Getenv("CLAUDE_TELEPORT_" + legacy); v != "" {
+			return v
+		}
 	}
 	return def
 }
@@ -864,7 +876,7 @@ func runUpdate(args []string) error {
 		return nil
 	}
 	if *check {
-		fmt.Printf("A newer version is available (%s). Run `claude-teleport update` to install it.\n", latestClean)
+		fmt.Printf("A newer version is available (%s). Run `entangle update` to install it.\n", latestClean)
 		return nil
 	}
 	if !*yes && !confirm(fmt.Sprintf("Update to %s now?", latestClean)) {
@@ -906,8 +918,8 @@ func runGUI(args []string) error {
 func runTUI(args []string) error {
 	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
 	cfg := fs.String("config-dir", "", "override the Claude config dir")
-	rendezvous := fs.String("rendezvous", envOr("CLAUDE_TELEPORT_RENDEZVOUS", ""), "rendezvous server URL (default: public magic-wormhole)")
-	relay := fs.String("relay", envOr("CLAUDE_TELEPORT_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
+	rendezvous := fs.String("rendezvous", envOr("ENTANGLE_RENDEZVOUS", ""), "rendezvous server URL (default: public magic-wormhole)")
+	relay := fs.String("relay", envOr("ENTANGLE_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
 	words := fs.Int("code-words", 2, "number of words in a generated transfer code")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -949,14 +961,14 @@ func parseMaps(in []string) ([]paths.Mapping, error) {
 
 func runInspect(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: claude-teleport inspect <bundle>")
+		return fmt.Errorf("usage: entangle inspect <bundle>")
 	}
 	mb, err := bundle.ReadManifest(args[0])
 	if err != nil {
 		return err
 	}
 	if len(mb) == 0 {
-		return fmt.Errorf("no manifest.json found - is %q a claude-teleport bundle?", args[0])
+		return fmt.Errorf("no manifest.json found - is %q a entangle bundle?", args[0])
 	}
 	var man manifest.Manifest
 	if err := json.Unmarshal(mb, &man); err != nil {

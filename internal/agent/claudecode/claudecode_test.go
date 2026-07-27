@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
 )
 
 // TestRegistered proves the init-time registration works, which is what makes

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
+	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
+	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
+	"github.com/gowtham-sai-yadav/entangle/internal/exporter"
+	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
+	"github.com/gowtham-sai-yadav/entangle/internal/paths"
 )
 
 // These tests cover the thing the product actually promises: pack a machine up,
@@ -244,7 +244,7 @@ func TestLegacyManifestDefaults(t *testing.T) {
 	// A v0.5.x session manifest, verbatim in shape: no schemaVersion gap, no
 	// fields added after it shipped.
 	legacy := `{
-	  "tool": "claude-teleport",
+	  "tool": "entangle",
 	  "toolVersion": "0.5.0",
 	  "schemaVersion": 1,
 	  "createdAt": "2026-07-01T00:00:00Z",
@@ -268,7 +268,7 @@ func TestLegacyManifestDefaults(t *testing.T) {
 
 	// And a manifest with no kind at all still means "full backup".
 	var old manifest.Manifest
-	if err := json.Unmarshal([]byte(`{"tool":"claude-teleport","schemaVersion":1,"source":{"os":"linux"}}`), &old); err != nil {
+	if err := json.Unmarshal([]byte(`{"tool":"entangle","schemaVersion":1,"source":{"os":"linux"}}`), &old); err != nil {
 		t.Fatal(err)
 	}
 	if old.IsSession() {

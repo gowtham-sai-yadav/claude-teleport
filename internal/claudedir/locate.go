@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
+	"github.com/gowtham-sai-yadav/entangle/internal/paths"
 )
 
 type Paths struct {
@@ -93,8 +93,11 @@ func Discover(p Paths) ([]Project, error) {
 	// project you would hand off or migrate - they are the litter a tool leaves
 	// when it shells out to `claude` from a scratch dir (a polymath-style log
 	// analyzer can create hundreds in one run). Hide them by default; set
-	// CLAUDE_TELEPORT_INCLUDE_TEMP to see everything.
-	includeTemp := os.Getenv("CLAUDE_TELEPORT_INCLUDE_TEMP") != ""
+	// ENTANGLE_INCLUDE_TEMP to see everything.
+	// The CLAUDE_TELEPORT_ spelling is still honoured: this setting lives in
+	// people's shell profiles, and a rename should not quietly change behaviour.
+	includeTemp := os.Getenv("ENTANGLE_INCLUDE_TEMP") != "" ||
+		os.Getenv("CLAUDE_TELEPORT_INCLUDE_TEMP") != ""
 
 	var out []Project
 	for _, e := range entries {

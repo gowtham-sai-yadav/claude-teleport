@@ -10,10 +10,10 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/redact"
+	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
+	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
+	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
+	"github.com/gowtham-sai-yadav/entangle/internal/redact"
 )
 
 // ShareOptions configures packing a single session for a teammate.
@@ -62,7 +62,7 @@ type packItem struct {
 // SessionBundle is a built, in-memory single-session bundle, ready to be
 // written to a file or streamed over a transfer. Build it with PrepareShare.
 type SessionBundle struct {
-	// Name is a suggested filename, e.g. claude-teleport-session-<shortid>.tgz.
+	// Name is a suggested filename, e.g. entangle-session-<shortid>.tgz.
 	Name string
 	// Preview describes what the bundle contains, for a confirmation prompt.
 	Preview SharePreview
@@ -185,7 +185,7 @@ func PrepareShare(opts ShareOptions) (*SessionBundle, error) {
 
 	name := opts.Out
 	if name == "" {
-		name = fmt.Sprintf("claude-teleport-session-%s.tgz", sess.ShortID())
+		name = fmt.Sprintf("entangle-session-%s.tgz", sess.ShortID())
 	}
 
 	return &SessionBundle{
@@ -256,7 +256,7 @@ func printShareResult(res ShareResult, redacted bool) {
 		fmt.Println("WARNING: secrets were NOT scrubbed (--no-redact). The raw transcript is in this file.")
 	}
 	fmt.Println("Your teammate imports it from inside their copy of the project:")
-	fmt.Printf("  cd <their-project-dir> && claude-teleport import %s\n", res.Path)
+	fmt.Printf("  cd <their-project-dir> && entangle import %s\n", res.Path)
 }
 
 func shortID(id string) string {

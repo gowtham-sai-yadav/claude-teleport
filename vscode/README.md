@@ -1,21 +1,21 @@
-# claude-teleport for VS Code
+# entangle for VS Code
 
 Hand a [Claude Code](https://claude.com/claude-code) session to a teammate over an encrypted code, or share it to a file — without leaving the editor.
 
-This extension is a thin front-end over the [`claude-teleport`](https://github.com/gowtham-sai-yadav/claude-teleport) CLI. It adds IDE commands and a session picker; the CLI does all the work, so there is nothing to keep in sync and your data never leaves your machine except through the CLI's own end-to-end-encrypted transfer.
+This extension is a thin front-end over the [`entangle`](https://github.com/gowtham-sai-yadav/entangle) CLI. It adds IDE commands and a session picker; the CLI does all the work, so there is nothing to keep in sync and your data never leaves your machine except through the CLI's own end-to-end-encrypted transfer.
 
 ## Requirements
 
-The extension drives the `claude-teleport` CLI (v0.5.1+). You do not have to install it separately: the first time you use a command, if the CLI is not already on your PATH, the extension offers to **download it for you** — the prebuilt binary for your OS, fetched from the GitHub release and verified by SHA-256 checksum, cached in the extension's storage.
+The extension drives the `entangle` CLI (v0.5.1+). You do not have to install it separately: the first time you use a command, if the CLI is not already on your PATH, the extension offers to **download it for you** — the prebuilt binary for your OS, fetched from the GitHub release and verified by SHA-256 checksum, cached in the extension's storage.
 
 Prefer to manage it yourself? Install it and it will be used automatically:
 
 ```bash
 curl -fsSL https://gowthamsai.in/install.sh | sh      # macOS / Linux
-brew install gowtham-sai-yadav/tap/claude-teleport    # Homebrew
+brew install gowtham-sai-yadav/tap/entangle    # Homebrew
 ```
 
-Or point **`claude-teleport.path`** at a specific binary in Settings.
+Or point **`entangle.path`** at a specific binary in Settings.
 
 ## Commands
 
@@ -32,8 +32,8 @@ Sends and receives run in an integrated terminal, so you see the real CLI output
 
 ## Settings
 
-- **`claude-teleport.path`** — path to the binary (default: `claude-teleport`).
-- **`claude-teleport.configDir`** — override the Claude config dir (passed as `--config-dir`).
+- **`entangle.path`** — path to the binary (default: `entangle`).
+- **`entangle.configDir`** — override the Claude config dir (passed as `--config-dir`).
 
 ## License
 

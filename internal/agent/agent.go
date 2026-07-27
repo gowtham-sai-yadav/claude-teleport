@@ -1,4 +1,4 @@
-// Package agent is the seam between claude-teleport and the coding tools whose
+// Package agent is the seam between entangle and the coding tools whose
 // sessions it moves. Each supported tool implements Provider: it says where it
 // keeps its data on this machine and what sessions are there, in one shared
 // vocabulary, so the CLI, the TUI, and the web GUI never learn a second tool's

@@ -9,8 +9,8 @@
 package claudecode
 
 import (
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
 )
 
 // Keys for the Claude-specific locations carried in agent.Roots.Extra. Only this

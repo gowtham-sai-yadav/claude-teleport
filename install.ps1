@@ -1,6 +1,6 @@
-# claude-teleport installer for Windows (PowerShell).
+# entangle installer for Windows (PowerShell).
 #
-#   irm https://raw.githubusercontent.com/gowtham-sai-yadav/claude-teleport/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/gowtham-sai-yadav/entangle/main/install.ps1 | iex
 #
 # Downloads the prebuilt Windows binary from the latest GitHub release, verifies
 # its SHA-256 checksum, installs it under %LOCALAPPDATA%, and adds it to your
@@ -10,8 +10,8 @@
 
 $ErrorActionPreference = "Stop"
 
-$repo    = "gowtham-sai-yadav/claude-teleport"
-$binary  = "claude-teleport"
+$repo    = "gowtham-sai-yadav/entangle"
+$binary  = "entangle"
 $version = if ($env:VERSION) { $env:VERSION } else { "latest" }
 $asset   = "$binary-windows-amd64.exe"   # amd64 build runs on Windows arm64 via emulation
 
@@ -21,7 +21,7 @@ $base = if ($version -eq "latest") {
     "https://github.com/$repo/releases/download/$version"
 }
 
-$installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { "$env:LOCALAPPDATA\Programs\claude-teleport" }
+$installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { "$env:LOCALAPPDATA\Programs\entangle" }
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
 $tmp = New-TemporaryFile

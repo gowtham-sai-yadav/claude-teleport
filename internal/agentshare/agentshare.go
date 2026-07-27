@@ -14,7 +14,7 @@
 // install. An unrecognised prefix is simply skipped instead.
 //
 // And they are stamped with a higher schema version, so those older binaries
-// refuse the bundle outright with "run claude-teleport update" rather than
+// refuse the bundle outright with "run entangle update" rather than
 // silently writing nothing and reporting success.
 package agentshare
 
@@ -28,10 +28,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/redact"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
+	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
+	"github.com/gowtham-sai-yadav/entangle/internal/redact"
 )
 
 // Bundle is a packed foreign session held in memory, not yet written anywhere.
@@ -49,7 +49,7 @@ type Bundle struct {
 
 // Options configures packing.
 type Options struct {
-	ToolVersion string // claude-teleport's own version, for the manifest
+	ToolVersion string // entangle's own version, for the manifest
 	Redact      bool   // scrub likely secrets before packing
 }
 
@@ -85,7 +85,7 @@ func Pack(p agent.Provider, r agent.Roots, s agent.Session, opts Options) (*Bund
 		// Includes is printed verbatim by `inspect` on binaries that predate this
 		// format, so it doubles as the explanation for a human looking at a bundle
 		// their build cannot unpack.
-		Includes:     []string{sh.BundlePrefix(), "requires claude-teleport >= 0.6"},
+		Includes:     []string{sh.BundlePrefix(), "requires entangle >= 0.6"},
 		Agent:        string(p.ID()),
 		AgentVersion: packed.Preview.AgentVersion,
 		ProjectPath:  s.ProjectPath,
@@ -96,7 +96,7 @@ func Pack(p agent.Provider, r agent.Roots, s agent.Session, opts Options) (*Bund
 	}
 
 	return &Bundle{
-		Name:         fmt.Sprintf("claude-teleport-%s-session-%s.tgz", p.ID(), safeName(s.ShortID)),
+		Name:         fmt.Sprintf("entangle-%s-session-%s.tgz", p.ID(), safeName(s.ShortID)),
 		Preview:      packed.Preview,
 		Provider:     p.ID(),
 		manifestJSON: mb,
@@ -146,7 +146,7 @@ func Unpack(bundlePath, targetDir, configDirOverride string) (*UnpackResult, err
 	id := agent.ID(man.Agent)
 	p, ok := agent.Get(id)
 	if !ok {
-		return nil, fmt.Errorf("this bundle is from %q, which this version of claude-teleport does not know about; try `claude-teleport update`", man.Agent)
+		return nil, fmt.Errorf("this bundle is from %q, which this version of entangle does not know about; try `entangle update`", man.Agent)
 	}
 	sh, ok := agent.SharerFor(p)
 	if !ok {
@@ -212,7 +212,7 @@ func readManifest(bundlePath string) (manifest.Manifest, error) {
 		return manifest.Manifest{}, fmt.Errorf("read manifest: %w", err)
 	}
 	if len(mb) == 0 {
-		return manifest.Manifest{}, fmt.Errorf("no manifest.json found - is %q a claude-teleport bundle?", bundlePath)
+		return manifest.Manifest{}, fmt.Errorf("no manifest.json found - is %q a entangle bundle?", bundlePath)
 	}
 	var man manifest.Manifest
 	if err := json.Unmarshal(mb, &man); err != nil {

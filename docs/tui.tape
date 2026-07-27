@@ -17,13 +17,13 @@ Set Theme "TokyoNight"
 
 # --- hidden setup: build the binary and seed a clean demo history ---
 Hide
-Type "go build -ldflags '-X github.com/gowtham-sai-yadav/claude-teleport/internal/cli.version=0.5.0' -o /tmp/ct-demo . && bash docs/demo-seed.sh /tmp/ct-demo-home && clear"
+Type "go build -ldflags '-X github.com/gowtham-sai-yadav/entangle/internal/cli.version=0.6.0' -o /tmp/entangle-demo . && DEMO_CODEX_HOME=/tmp/entangle-demo-codex bash docs/demo-seed.sh /tmp/entangle-demo-home && clear"
 Enter
 Sleep 5s
 Show
 
 # --- home: banner + session list + footer ---
-Type "/tmp/ct-demo tui --config-dir /tmp/ct-demo-home"
+Type "CODEX_HOME=/tmp/entangle-demo-codex OPENCODE_DB=/tmp/entangle-demo-oc.db /tmp/entangle-demo tui --config-dir /tmp/entangle-demo-home"
 Enter
 Sleep 3s
 Screenshot docs/tui-home.png

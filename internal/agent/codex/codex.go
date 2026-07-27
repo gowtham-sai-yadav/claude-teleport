@@ -30,7 +30,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
 )
 
 // KeySessionsDir is where the rollout tree lives, carried in agent.Roots.Extra.

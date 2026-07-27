@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
+	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
 )
 
 // The properties tested here are the ones that protect users who have not
@@ -160,7 +160,7 @@ func TestForeignBundleIsRefusedByOlderBuilds(t *testing.T) {
 	}
 	// Includes is printed verbatim by `inspect` on binaries that predate this
 	// format, so it doubles as the explanation for a confused human.
-	if !strings.Contains(strings.Join(man.Includes, " "), "requires claude-teleport") {
+	if !strings.Contains(strings.Join(man.Includes, " "), "requires entangle") {
 		t.Errorf("Includes should tell an old build's inspect what is needed: %v", man.Includes)
 	}
 }
@@ -169,7 +169,7 @@ func TestForeignBundleIsRefusedByOlderBuilds(t *testing.T) {
 // every bundle already on a disk keeps working.
 func TestClaudeManifestUnchanged(t *testing.T) {
 	var m manifest.Manifest
-	if err := json.Unmarshal([]byte(`{"tool":"claude-teleport","schemaVersion":1,"kind":"session"}`), &m); err != nil {
+	if err := json.Unmarshal([]byte(`{"tool":"entangle","schemaVersion":1,"kind":"session"}`), &m); err != nil {
 		t.Fatal(err)
 	}
 	if m.IsForeignAgent() {

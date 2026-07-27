@@ -8,7 +8,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
 )
 
 // Fixtures mirror the real rollout shape, which was established by reading actual

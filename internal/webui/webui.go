@@ -1,6 +1,6 @@
 // Package webui serves a small point-and-click import wizard on localhost.
 // It is built entirely on the standard library (no external dependencies), so
-// it ships inside the single binary. `claude-teleport gui` starts it and opens
+// it ships inside the single binary. `entangle gui` starts it and opens
 // the browser; the page talks to the same importer code the CLI uses.
 package webui
 
@@ -14,9 +14,9 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/importer"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
+	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
+	"github.com/gowtham-sai-yadav/entangle/internal/importer"
+	"github.com/gowtham-sai-yadav/entangle/internal/paths"
 )
 
 //go:embed index.html
@@ -37,7 +37,7 @@ func Serve(port int, bundle string) error {
 	mux.HandleFunc("/api/plan", planHandler)
 	mux.HandleFunc("/api/import", importHandler)
 
-	fmt.Println("claude-teleport GUI is running at", url)
+	fmt.Println("entangle GUI is running at", url)
 	fmt.Println("Your browser should open automatically. Press Ctrl+C here to stop.")
 	openBrowser(url)
 	return http.Serve(ln, mux)

@@ -25,10 +25,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/paths"
+	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
+	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
+	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
+	"github.com/gowtham-sai-yadav/entangle/internal/paths"
 )
 
 type Options struct {
@@ -96,7 +96,7 @@ func LoadManifest(bundlePath string) (manifest.Manifest, error) {
 		return manifest.Manifest{}, fmt.Errorf("read manifest: %w", err)
 	}
 	if len(mb) == 0 {
-		return manifest.Manifest{}, fmt.Errorf("no manifest.json found - is %q a claude-teleport bundle?", bundlePath)
+		return manifest.Manifest{}, fmt.Errorf("no manifest.json found - is %q a entangle bundle?", bundlePath)
 	}
 	var man manifest.Manifest
 	if err := json.Unmarshal(mb, &man); err != nil {
@@ -383,7 +383,7 @@ func printPlan(p *PlanResult) {
 			selected++
 		}
 	}
-	fmt.Println("claude-teleport import")
+	fmt.Println("entangle import")
 	fmt.Printf("  bundle source : %s (home %s)\n", p.SourceOS, p.SourceHome)
 	fmt.Printf("  this machine  : %s (home %s)\n", p.TargetOS, p.TargetHome)
 	fmt.Printf("  projects      : %d selected of %d\n", selected, len(p.Items))

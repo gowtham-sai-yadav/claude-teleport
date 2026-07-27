@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
 )
 
 // Sharing an opencode session.
@@ -94,7 +94,7 @@ func (Provider) Unpack(r agent.Roots, entries []agent.Entry, targetDir string) (
 	}
 
 	// A real file, because import takes a path.
-	tmp, err := os.CreateTemp("", "claude-teleport-opencode-*.json")
+	tmp, err := os.CreateTemp("", "entangle-opencode-*.json")
 	if err != nil {
 		return nil, err
 	}

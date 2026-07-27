@@ -103,9 +103,9 @@ func FindSession(p Paths, prefix, project string) (Session, error) {
 	switch len(matches) {
 	case 0:
 		if project != "" {
-			return Session{}, fmt.Errorf("no session matches %q in a project matching %q (run `claude-teleport sessions` to list them)", prefix, project)
+			return Session{}, fmt.Errorf("no session matches %q in a project matching %q (run `entangle sessions` to list them)", prefix, project)
 		}
-		return Session{}, fmt.Errorf("no session matches %q (run `claude-teleport sessions` to list them)", prefix)
+		return Session{}, fmt.Errorf("no session matches %q (run `entangle sessions` to list them)", prefix)
 	case 1:
 		return matches[0], nil
 	default:

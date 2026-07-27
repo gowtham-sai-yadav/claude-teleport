@@ -19,7 +19,7 @@ func TestIsEphemeralPath(t *testing.T) {
 		{"/var/tmp/bar", true},
 		{`C:\Users\bob\AppData\Local\Temp\claude-xyz`, true},
 		// real projects must be kept
-		{"/Users/gowtham/Desktop/claude-teleport", false},
+		{"/Users/gowtham/Desktop/entangle", false},
 		{"/Users/gowtham/Desktop", false},
 		{"/Users/gowtham/tmp-notes/project", false}, // "tmp" only as a name part, not the root
 		{"/home/dev/work/api", false},
@@ -34,7 +34,7 @@ func TestIsEphemeralPath(t *testing.T) {
 }
 
 // TestDiscoverHidesTempProjects builds a fake projects dir and checks the temp
-// folders are hidden by default and revealed by CLAUDE_TELEPORT_INCLUDE_TEMP.
+// folders are hidden by default and revealed by ENTANGLE_INCLUDE_TEMP.
 func TestDiscoverHidesTempProjects(t *testing.T) {
 	root := t.TempDir()
 	projects := filepath.Join(root, "projects")
@@ -71,12 +71,12 @@ func TestDiscoverHidesTempProjects(t *testing.T) {
 		t.Fatalf("default Discover = %v, want only the real project", names)
 	}
 
-	t.Setenv("CLAUDE_TELEPORT_INCLUDE_TEMP", "1")
+	t.Setenv("ENTANGLE_INCLUDE_TEMP", "1")
 	all, err := Discover(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(all) != 3 {
-		t.Fatalf("with CLAUDE_TELEPORT_INCLUDE_TEMP, Discover returned %d projects, want 3", len(all))
+		t.Fatalf("with ENTANGLE_INCLUDE_TEMP, Discover returned %d projects, want 3", len(all))
 	}
 }

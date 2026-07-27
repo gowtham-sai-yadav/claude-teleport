@@ -15,6 +15,10 @@ import (
 // config_test.go compares the client field to the constant, which cannot catch a
 // change to the constant itself.
 func TestAppIDIsWireCompatibility(t *testing.T) {
+	// Deliberately the pre-rename string. This is a wire value, not a name: two
+	// peers only meet if it matches byte for byte, there is no way to negotiate it,
+	// and every copy already installed uses this one. It has to survive the rename
+	// to entangle, and every rename after it.
 	const want = "github.com/gowtham-sai-yadav/claude-teleport"
 	if AppID != want {
 		t.Fatalf("AppID = %q, want %q.\n"+

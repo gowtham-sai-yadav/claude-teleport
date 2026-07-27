@@ -1,4 +1,4 @@
-// Package tui is the interactive terminal cockpit for claude-teleport. It is a
+// Package tui is the interactive terminal cockpit for entangle. It is a
 // thin Bubble Tea front-end over the same building blocks the CLI uses
 // (exporter, transfer, importer, updater), so every feature is reachable
 // without remembering a single flag: browse your sessions, hand one to a
@@ -31,16 +31,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	figure "github.com/common-nighthawk/go-figure"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
-	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/claudecode" // registers the Claude Code provider
-	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/codex"      // registers the Codex CLI provider
-	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/opencode"   // registers the opencode provider
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agentshare"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/importer"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/transfer"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/updater"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
+	_ "github.com/gowtham-sai-yadav/entangle/internal/agent/claudecode" // registers the Claude Code provider
+	_ "github.com/gowtham-sai-yadav/entangle/internal/agent/codex"      // registers the Codex CLI provider
+	_ "github.com/gowtham-sai-yadav/entangle/internal/agent/opencode"   // registers the opencode provider
+	"github.com/gowtham-sai-yadav/entangle/internal/agentshare"
+	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
+	"github.com/gowtham-sai-yadav/entangle/internal/exporter"
+	"github.com/gowtham-sai-yadav/entangle/internal/importer"
+	"github.com/gowtham-sai-yadav/entangle/internal/transfer"
+	"github.com/gowtham-sai-yadav/entangle/internal/updater"
 )
 
 // ---- palette --------------------------------------------------------------
@@ -259,7 +259,7 @@ func newModel(configDir string, tcfg transfer.Config, version string) model {
 		configDir: configDir,
 		version:   version,
 		tcfg:      tcfg,
-		banner:    figure.NewFigure("teleport", "small", true).String(),
+		banner:    figure.NewFigure("entangle", "small", true).String(),
 		bannerOK:  true,
 		list:      l,
 		spinner:   sp,
@@ -441,7 +441,7 @@ func startReceive(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, con
 				emit(ch, doneMsg{err: fmt.Errorf("receive: %w", err)})
 				return
 			}
-			tmp, err := os.CreateTemp("", "claude-teleport-recv-*.tgz")
+			tmp, err := os.CreateTemp("", "entangle-recv-*.tgz")
 			if err != nil {
 				emit(ch, doneMsg{err: err})
 				return
@@ -526,7 +526,7 @@ func startWriteShare(ch chan tea.Msg, b *prepared) tea.Cmd {
 			abs, _ := filepath.Abs(b.name)
 			emit(ch, doneMsg{
 				title: "Shared to a file.",
-				body: fmt.Sprintf("Wrote %s\nSend it to your teammate; they run:\n  claude-teleport import %s\n(they need %s installed)",
+				body: fmt.Sprintf("Wrote %s\nSend it to your teammate; they run:\n  entangle import %s\n(they need %s installed)",
 					abs, b.name, toolName(b.provider)),
 			})
 		}()
@@ -891,7 +891,7 @@ func (m *model) startInput(md mode) model {
 	if md == modeRecvCode {
 		m.input.Placeholder = "7-crossover-marbles"
 	} else {
-		m.input.Placeholder = "path/to/claude-teleport-session.tgz"
+		m.input.Placeholder = "path/to/entangle-session.tgz"
 	}
 	m.input.Focus()
 	return *m
@@ -998,7 +998,7 @@ func (m model) helpView() string {
 		"",
 		head("Other"),
 		row("c", "context — include project memory in a share (now: "+ctx+")"),
-		row("u", "update — install a newer claude-teleport in place"),
+		row("u", "update — install a newer entangle in place"),
 		row("q", "quit"),
 		"",
 		mutedStyle.Render("Secrets are scrubbed before anything leaves. Everything runs"),
@@ -1014,14 +1014,14 @@ func (m model) headerView() string {
 	if m.bannerOK {
 		b.WriteString(bannerStyle.Render(strings.TrimRight(m.banner, "\n")))
 	} else {
-		b.WriteString(bannerStyle.Render("◈ claude-teleport"))
+		b.WriteString(bannerStyle.Render("◈ entangle"))
 	}
 	b.WriteString("\n")
-	b.WriteString(taglineStyle.Render("hand a coding-agent session to anyone."))
+	b.WriteString(taglineStyle.Render("hand a live coding session to anyone."))
 	b.WriteString("\n")
 	b.WriteString(accentStyle.Render("private by construction") + dimStyle.Render(" · everything runs on this machine"))
 	b.WriteString("\n")
-	b.WriteString(mutedStyle.Render(fmt.Sprintf("claude-teleport v%s", m.version)))
+	b.WriteString(mutedStyle.Render(fmt.Sprintf("entangle v%s", m.version)))
 	b.WriteString("\n")
 	return b.String()
 }
@@ -1101,7 +1101,7 @@ func (m model) sendView() string {
 			b.WriteString(mutedStyle.Render("  press "+"c"+" to copy it") + "\n")
 		}
 		b.WriteString("\n" + dimStyle.Render("They run:") + "\n")
-		b.WriteString(paperText("  claude-teleport receive "+m.code) + "\n\n")
+		b.WriteString(paperText("  entangle receive "+m.code) + "\n\n")
 		if m.total > 0 {
 			b.WriteString(m.progress.ViewAs(ratio(m.done, m.total)) + " " + dimStyle.Render(pct(m.done, m.total)) + "\n")
 		} else {
@@ -1189,7 +1189,7 @@ func (m model) resultView() string {
 
 // centered places a card in the middle of the screen with the wordmark above.
 func (m model) centered(card string) string {
-	head := bannerStyle.Render("◈ claude-teleport")
+	head := bannerStyle.Render("◈ entangle")
 	block := lipgloss.JoinVertical(lipgloss.Center, head, "", card)
 	if m.width == 0 || m.height == 0 {
 		return block

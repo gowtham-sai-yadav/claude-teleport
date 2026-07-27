@@ -1,4 +1,4 @@
-module github.com/gowtham-sai-yadav/claude-teleport
+module github.com/gowtham-sai-yadav/entangle
 
 go 1.26
 

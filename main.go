@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/cli"
+	"github.com/gowtham-sai-yadav/entangle/internal/cli"
 )
 
 func main() {
