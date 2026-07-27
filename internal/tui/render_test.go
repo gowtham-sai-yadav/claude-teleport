@@ -200,3 +200,73 @@ func TestLoadProblemsSurface(t *testing.T) {
 		t.Errorf("a read failure should be surfaced, notice = %q", got.notice)
 	}
 }
+
+// TestSendViewOffersCopyOnlyWithACode: the copy hint is meaningless before a code
+// exists, and the send screen is on display during that whole wait.
+func TestSendViewOffersCopyOnlyWithACode(t *testing.T) {
+	m := fakeModel(t, 100, 40)
+	m.mode = modeSend
+
+	m.status = "Opening a secure channel…"
+	if plain(m.sendView()) == "" {
+		t.Fatal("empty send view")
+	}
+	if strings.Contains(plain(m.sendView()), "copy code") {
+		t.Error("no code yet, so nothing to copy - the hint should be absent")
+	}
+
+	m.code = "7-crossover-marbles"
+	withCode := plain(m.sendView())
+	if !strings.Contains(withCode, "copy code") {
+		t.Errorf("with a code present the copy hint should appear:\n%s", withCode)
+	}
+	if !strings.Contains(withCode, "press c to copy") {
+		t.Errorf("the inline prompt should say which key:\n%s", withCode)
+	}
+}
+
+// TestCopyResultReplacesThePrompt: after copying, the screen should confirm it
+// rather than keep suggesting the thing you just did.
+func TestCopyResultReplacesThePrompt(t *testing.T) {
+	m := fakeModel(t, 100, 40)
+	m.mode, m.code = modeSend, "7-crossover-marbles"
+	m.copied = "copied to clipboard"
+
+	got := plain(m.sendView())
+	if !strings.Contains(got, "copied to clipboard") {
+		t.Errorf("the confirmation should be shown:\n%s", got)
+	}
+	if strings.Contains(got, "press c to copy") {
+		t.Error("the prompt should give way to the confirmation")
+	}
+	// A machine with no clipboard is a normal case, not an error state.
+	m.copied = "no clipboard here - select the code above to copy it"
+	if !strings.Contains(plain(m.sendView()), "select the code above") {
+		t.Error("the no-clipboard case should tell the user what to do instead")
+	}
+	// Border must still line up with either message present.
+	for _, msg := range []string{"copied to clipboard", "no clipboard here - select the code above to copy it"} {
+		m.copied = msg
+		lines := strings.Split(m.sendView(), "\n")
+		want := lipgloss.Width(lines[0])
+		for i, ln := range lines {
+			if got := lipgloss.Width(ln); got != want {
+				t.Fatalf("send card line %d width=%d, want %d (msg=%q)", i, got, want, msg)
+			}
+		}
+	}
+}
+
+// TestNoFallbackBannerInSendView: switching transfer servers needs nothing from the
+// user, and an amber warning at the exact moment they are waiting for a code reads
+// as a failure. It was removed on purpose; this keeps it removed.
+func TestNoFallbackBannerInSendView(t *testing.T) {
+	m := fakeModel(t, 100, 40)
+	m.mode, m.code = modeSend, "7-crossover-marbles"
+	got := plain(m.sendView())
+	for _, phrase := range []string{"not responding", "switched to a backup", "does not need to change"} {
+		if strings.Contains(got, phrase) {
+			t.Errorf("the fallback banner is back (%q):\n%s", phrase, got)
+		}
+	}
+}

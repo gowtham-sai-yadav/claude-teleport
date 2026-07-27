@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -157,6 +158,7 @@ type model struct {
 	events chan tea.Msg
 	cancel context.CancelFunc
 	code   string
+	copied string // transient result of a copy attempt, shown under the code
 	status string
 	notice string // sticky warning for the current operation (e.g. server fallback)
 	done   int64
@@ -377,16 +379,11 @@ func waitForEvent(ch chan tea.Msg) tea.Cmd {
 // emit blocks; used for rare, must-not-drop messages (code, status, done).
 func emit(ch chan tea.Msg, msg tea.Msg) { ch <- msg }
 
-// withFallbackNotice surfaces a transfer-server switch in the UI. There is
-// nothing for the user to do about it: receiving tries both mailboxes at once, so
-// the two sides still meet whichever one answered.
-func withFallbackNotice(ch chan tea.Msg, cfg transfer.Config) transfer.Config {
-	cfg.OnFallback = func(mailbox, _ string, _ error) {
-		emit(ch, noticeMsg("The usual transfer server was not responding, so I switched to a backup.\n"+
-			"Your teammate does not need to change anything."))
-	}
-	return cfg
-}
+// Switching transfer servers is deliberately not surfaced. It needs nothing from
+// the user - receiving tries both mailboxes at once, so the two sides meet either
+// way - and an amber banner about infrastructure reads like something went wrong
+// during the one moment the user is watching for a code. If both servers fail, the
+// error says so; that is when it matters.
 
 // emitProgress never blocks the transfer goroutine: if the UI is behind, we
 // simply skip a frame rather than stalling the bytes.
@@ -407,7 +404,7 @@ func startSend(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, b *pre
 				emit(ch, doneMsg{err: err})
 				return
 			}
-			err := transfer.Send(ctx, withFallbackNotice(ch, cfg), b.name, bytes.NewReader(buf.Bytes()),
+			err := transfer.Send(ctx, cfg, b.name, buf.Bytes(),
 				func(code string) { emit(ch, codeMsg(code)) },
 				func(done, total int64) { emitProgress(ch, done, total) },
 			)
@@ -439,7 +436,7 @@ func startReceive(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, con
 	return func() tea.Msg {
 		go func() {
 			emit(ch, statusMsg("Connecting…"))
-			in, err := transfer.Receive(ctx, withFallbackNotice(ch, cfg), code)
+			in, err := transfer.Receive(ctx, cfg, code)
 			if err != nil {
 				emit(ch, doneMsg{err: fmt.Errorf("receive: %w", err)})
 				return
@@ -790,7 +787,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 			m.cancel = cancel
 			m.events = make(chan tea.Msg, 64)
-			m.mode, m.status, m.code, m.notice, m.done, m.total = modeSend, "Opening a secure channel…", "", "", 0, 0
+			m.mode, m.status, m.code, m.copied, m.notice, m.done, m.total = modeSend, "Opening a secure channel…", "", "", "", 0, 0
 			return m, tea.Batch(startSend(m.events, ctx, m.tcfg, m.prepped), waitForEvent(m.events), m.spinner.Tick)
 		case "esc", "q":
 			m.prepped = nil
@@ -800,6 +797,18 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case modeSend, modeReceive, modeBusy:
+		// The code is the one thing here worth copying, and reading it aloud is not
+		// always practical - people paste it into chat.
+		if key == "c" && m.code != "" {
+			if err := clipboard.WriteAll(m.code); err != nil {
+				// No clipboard is normal over SSH or in a bare container, so say what
+				// to do instead rather than presenting it as a failure.
+				m.copied = "no clipboard here - select the code above to copy it"
+			} else {
+				m.copied = "copied to clipboard"
+			}
+			return m, nil
+		}
 		if key == "esc" {
 			if m.cancel != nil {
 				m.cancel()
@@ -903,7 +912,7 @@ func (m *model) clearOp() {
 		m.cancel()
 		m.cancel = nil
 	}
-	m.code, m.status, m.notice, m.done, m.total = "", "", "", 0, 0
+	m.code, m.copied, m.status, m.notice, m.done, m.total = "", "", "", "", 0, 0
 	m.prepped = nil
 }
 
@@ -1086,7 +1095,12 @@ func (m model) sendView() string {
 	} else {
 		b.WriteString(dimStyle.Render("Read this code to your teammate:") + "\n\n")
 		b.WriteString(codeStyle.Render(m.code) + "\n\n")
-		b.WriteString(dimStyle.Render("They run:") + "\n")
+		if m.copied != "" {
+			b.WriteString(okStyle.Render("  "+m.copied) + "\n")
+		} else {
+			b.WriteString(mutedStyle.Render("  press "+"c"+" to copy it") + "\n")
+		}
+		b.WriteString("\n" + dimStyle.Render("They run:") + "\n")
 		b.WriteString(paperText("  claude-teleport receive "+m.code) + "\n\n")
 		if m.total > 0 {
 			b.WriteString(m.progress.ViewAs(ratio(m.done, m.total)) + " " + dimStyle.Render(pct(m.done, m.total)) + "\n")
@@ -1094,7 +1108,11 @@ func (m model) sendView() string {
 			b.WriteString(m.spinner.View() + " " + dimStyle.Render("waiting for them to connect…") + "\n")
 		}
 	}
-	b.WriteString("\n" + keyHint("esc", "cancel"))
+	if m.code != "" {
+		b.WriteString("\n" + keyHint("c", "copy code") + "    " + keyHint("esc", "cancel"))
+	} else {
+		b.WriteString("\n" + keyHint("esc", "cancel"))
+	}
 	return cardStyle.Render(b.String())
 }
 

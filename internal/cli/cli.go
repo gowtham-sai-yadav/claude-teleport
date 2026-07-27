@@ -639,9 +639,9 @@ func runSend(args []string) error {
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 
-	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, CodeWords: *words, OnFallback: printFallback}
+	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, CodeWords: *words}
 	fmt.Println("Preparing a secure transfer...")
-	err = transfer.Send(ctx, tcfg, sendName, bytes.NewReader(buf.Bytes()),
+	err = transfer.Send(ctx, tcfg, sendName, buf.Bytes(),
 		func(code string) {
 			fmt.Printf("\nGive your teammate this code:\n\n    %s\n\n", code)
 			fmt.Println("They run this from inside their copy of the project:")
@@ -690,7 +690,7 @@ func runReceive(args []string) error {
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 
-	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, OnFallback: printFallback}
+	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay}
 	fmt.Println("Connecting...")
 	in, err := transfer.Receive(ctx, tcfg, code)
 	if err != nil {
@@ -784,16 +784,10 @@ func confirmSend(preview exporter.SharePreview) bool {
 	return confirm("Send it?")
 }
 
-// printFallback explains that the usual transfer server did not answer and we
-// moved to the alternate. Deliberately no instructions for the other side:
-// receiving tries both mailboxes at once, so it finds the sender either way, and
-// asking someone to export environment variables mid-handoff is friction that no
-// longer buys anything.
-func printFallback(mailbox, _ string, _ error) {
-	fmt.Println("\nThe usual transfer server was not responding, so I switched to a backup.")
-	fmt.Printf("(%s)\n", mailbox)
-	fmt.Println("Your teammate does not need to change anything.")
-}
+// Switching transfer servers is deliberately not announced. Nothing is required of
+// either side - receiving tries both mailboxes at once - and a warning about
+// infrastructure in the middle of a handoff reads as a problem when there is none.
+// A failure of both servers still reports itself, which is when it matters.
 
 // progressPrinter returns a progress callback that rewrites a single status
 // line on stderr.
