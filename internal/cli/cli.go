@@ -16,6 +16,9 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
+	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/claudecode" // registers the Claude Code provider
+	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/codex"      // registers the Codex CLI provider
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
@@ -101,7 +104,7 @@ func printHelp() {
 		"  claude-teleport import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
 		"  claude-teleport inspect <bundle>\n" +
 		"  claude-teleport verify  [--config-dir DIR]\n" +
-		"  claude-teleport sessions [--project P] [--config-dir DIR]\n" +
+		"  claude-teleport sessions [--tool claude-code|codex|all] [--project P] [--config-dir DIR] [--json]\n" +
 		"  claude-teleport share   <session-id-prefix | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
 		"  claude-teleport send    <session-id-prefix | --last> [--project P] [--with-context] [--no-redact] [--yes]\n" +
 		"  claude-teleport receive <code> [--config-dir DIR] [--map OLD=NEW]... [--yes]\n" +
@@ -240,28 +243,31 @@ type SessionJSON struct {
 
 func runSessions(args []string) error {
 	fs := flag.NewFlagSet("sessions", flag.ContinueOnError)
-	cfg := fs.String("config-dir", "", "override the Claude config dir")
+	cfg := fs.String("config-dir", "", "override the config dir of the selected tool")
 	project := fs.String("project", "", "only sessions whose project path or folder contains this")
 	asJSON := fs.Bool("json", false, "output the session list as JSON (for tooling, e.g. the editor extension)")
+	tool := fs.String("tool", string(agent.ClaudeCode),
+		"which coding tool to list: "+strings.Join(agent.IDs(), ", ")+", or all")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	tp, err := claudedir.Locate(*cfg)
+
+	// Listing goes through the provider registry, so this command never learns how
+	// any particular tool stores its sessions. The default is Claude Code, which
+	// keeps existing behaviour byte for byte; other tools are opt-in.
+	sessions, multi, err := listFor(*tool, *cfg)
 	if err != nil {
 		return err
 	}
-	sessions, err := claudedir.ListSessions(tp)
-	if err != nil {
-		return err
-	}
+	agent.SortSessions(sessions)
 	sessions = filterSessions(sessions, *project)
 
 	if *asJSON {
 		list := make([]SessionJSON, 0, len(sessions))
 		for _, s := range sessions {
 			list = append(list, SessionJSON{
-				Provider: ProviderClaudeCode,
-				ID:       s.ID, ShortID: s.ShortID(), Project: s.ProjectPath, Folder: s.Folder,
+				Provider: string(s.Provider),
+				ID:       s.ID, ShortID: s.ShortID, Project: s.ProjectPath, Folder: s.GroupKey,
 				Messages: s.Messages, Modified: s.ModTime.Format(time.RFC3339), SizeBytes: s.Size, Title: s.Title,
 			})
 		}
@@ -277,30 +283,99 @@ func runSessions(args []string) error {
 		fmt.Println("No sessions found.")
 		return nil
 	}
+	// The TOOL column appears only when more than one tool is in play, so someone
+	// using a single tool sees exactly the table they saw before.
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tLAST ACTIVE\tMSGS\tPROJECT\tTITLE")
+	if multi {
+		fmt.Fprintln(tw, "TOOL\tID\tLAST ACTIVE\tMSGS\tPROJECT\tTITLE")
+	} else {
+		fmt.Fprintln(tw, "ID\tLAST ACTIVE\tMSGS\tPROJECT\tTITLE")
+	}
+	nonClaude := 0
 	for _, s := range sessions {
-		proj := s.ProjectPath
+		proj := elideLeft(s.ProjectPath, projectColWidth)
 		if proj == "" {
 			proj = "(unknown)"
 		}
+		if s.Provider != agent.ClaudeCode {
+			nonClaude++
+		}
+		if multi {
+			fmt.Fprintf(tw, "%s\t", s.Provider)
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n",
-			s.ShortID(), s.ModTime.Format("2006-01-02 15:04"), s.Messages, proj, s.Title)
+			s.ShortID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, proj, s.Title)
 	}
 	tw.Flush()
 	fmt.Printf("\n%d session(s). Share one with: claude-teleport share <ID>\n", len(sessions))
+	if nonClaude > 0 {
+		// Say plainly what does not work yet, rather than letting someone discover
+		// it when share fails on a session this command just offered them.
+		fmt.Printf("Note: %d session(s) are from another tool. Listing works; sharing and moving them does not yet.\n", nonClaude)
+	}
 	return nil
 }
 
-func filterSessions(in []claudedir.Session, needle string) []claudedir.Session {
+// projectColWidth caps the project column. A single deeply nested path (an
+// editor's cache directory, say) otherwise pads the whole table out past a
+// terminal's width via tabwriter, pushing the titles off screen.
+const projectColWidth = 46
+
+// elideLeft shortens a path to at most max characters by dropping the front,
+// because the end of a path - the project's own name - is the part that
+// identifies it. Short paths are returned untouched.
+func elideLeft(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max || max < 2 {
+		return s
+	}
+	return "…" + string(r[len(r)-(max-1):])
+}
+
+// listFor gathers sessions for a --tool selection. multi reports whether more than
+// one tool could contribute, which decides whether the table shows a TOOL column.
+func listFor(tool, configDir string) (sessions []agent.Session, multi bool, err error) {
+	if tool == "all" {
+		// --config-dir overrides one tool's location, so pairing it with "all"
+		// has no coherent meaning. Refuse rather than silently apply it to one.
+		if configDir != "" {
+			return nil, false, fmt.Errorf("--config-dir applies to a single tool; use it with --tool <name>")
+		}
+		bounds := agent.Installed("")
+		if len(bounds) == 0 {
+			return nil, false, nil
+		}
+		for _, b := range bounds {
+			s, lerr := b.Provider.ListSessions(b.Roots)
+			if lerr != nil {
+				// One unreadable tool must not hide the others.
+				fmt.Fprintf(os.Stderr, "warning: could not list %s sessions: %v\n", b.Provider.DisplayName(), lerr)
+				continue
+			}
+			sessions = append(sessions, s...)
+		}
+		return sessions, len(bounds) > 1, nil
+	}
+
+	bound, err := agent.Resolve(agent.ID(tool), configDir)
+	if err != nil {
+		return nil, false, err
+	}
+	sessions, err = bound.Provider.ListSessions(bound.Roots)
+	return sessions, false, err
+}
+
+// filterSessions narrows a listing by a substring of the project path or the
+// provider's on-disk bucket name.
+func filterSessions(in []agent.Session, needle string) []agent.Session {
 	if needle == "" {
 		return in
 	}
 	needle = strings.ToLower(needle)
-	var out []claudedir.Session
+	var out []agent.Session
 	for _, s := range in {
 		if strings.Contains(strings.ToLower(s.ProjectPath), needle) ||
-			strings.Contains(strings.ToLower(s.Folder), needle) {
+			strings.Contains(strings.ToLower(s.GroupKey), needle) {
 			out = append(out, s)
 		}
 	}
