@@ -47,6 +47,7 @@ var (
 	muted  = lipgloss.Color("#6b6676") // faint text / rules
 	okGrn  = lipgloss.Color("#7ee0a8") // success
 	errRed = lipgloss.Color("#ff6b6b") // failure
+	warnAm = lipgloss.Color("#ffb454") // advisory
 )
 
 var (
@@ -57,6 +58,7 @@ var (
 	mutedStyle   = lipgloss.NewStyle().Foreground(muted)
 	okStyle      = lipgloss.NewStyle().Foreground(okGrn)
 	errStyle     = lipgloss.NewStyle().Foreground(errRed).Bold(true)
+	warnStyle    = lipgloss.NewStyle().Foreground(warnAm)
 	cardStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(muted).Padding(1, 3)
 	codeStyle    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(signal).
 			Foreground(signal).Bold(true).Padding(1, 4)
@@ -137,6 +139,7 @@ type model struct {
 	cancel context.CancelFunc
 	code   string
 	status string
+	notice string // sticky warning for the current operation (e.g. server fallback)
 	done   int64
 	total  int64
 
@@ -163,6 +166,7 @@ type preppedMsg struct {
 }
 type codeMsg string
 type statusMsg string
+type noticeMsg string
 type progressMsg struct{ done, total int64 }
 type doneMsg struct {
 	title string
@@ -274,6 +278,19 @@ func waitForEvent(ch chan tea.Msg) tea.Cmd {
 // emit blocks; used for rare, must-not-drop messages (code, status, done).
 func emit(ch chan tea.Msg, msg tea.Msg) { ch <- msg }
 
+// withFallbackNotice attaches a callback that surfaces a transfer-server switch
+// in the UI. The peer instruction is the important half: two people only meet on
+// the same mailbox, and a mismatch looks like waiting forever, not an error.
+func withFallbackNotice(ch chan tea.Msg, cfg transfer.Config) transfer.Config {
+	cfg.OnFallback = func(mailbox, relay string, _ error) {
+		emit(ch, noticeMsg("This network blocked the usual transfer server, so I switched to a backup.\n"+
+			"The other side must run these first, or you will not find each other:\n"+
+			"  export CLAUDE_TELEPORT_RENDEZVOUS="+mailbox+"\n"+
+			"  export CLAUDE_TELEPORT_RELAY="+relay))
+	}
+	return cfg
+}
+
 // emitProgress never blocks the transfer goroutine: if the UI is behind, we
 // simply skip a frame rather than stalling the bytes.
 func emitProgress(ch chan tea.Msg, done, total int64) {
@@ -293,7 +310,7 @@ func startSend(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, b *exp
 				emit(ch, doneMsg{err: err})
 				return
 			}
-			err := transfer.Send(ctx, cfg, b.Name, bytes.NewReader(buf.Bytes()),
+			err := transfer.Send(ctx, withFallbackNotice(ch, cfg), b.Name, bytes.NewReader(buf.Bytes()),
 				func(code string) { emit(ch, codeMsg(code)) },
 				func(done, total int64) { emitProgress(ch, done, total) },
 			)
@@ -316,7 +333,7 @@ func startReceive(ch chan tea.Msg, ctx context.Context, cfg transfer.Config, p c
 	return func() tea.Msg {
 		go func() {
 			emit(ch, statusMsg("Connecting…"))
-			in, err := transfer.Receive(ctx, cfg, code)
+			in, err := transfer.Receive(ctx, withFallbackNotice(ch, cfg), code)
 			if err != nil {
 				emit(ch, doneMsg{err: fmt.Errorf("receive: %w", err)})
 				return
@@ -534,6 +551,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = string(msg)
 		return m, waitForEvent(m.events)
 
+	case noticeMsg:
+		m.notice = string(msg)
+		return m, waitForEvent(m.events)
+
 	case progressMsg:
 		m.done, m.total = msg.done, msg.total
 		return m, waitForEvent(m.events)
@@ -627,7 +648,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 			m.cancel = cancel
 			m.events = make(chan tea.Msg, 64)
-			m.mode, m.status, m.code, m.done, m.total = modeSend, "Opening a secure channel…", "", 0, 0
+			m.mode, m.status, m.code, m.notice, m.done, m.total = modeSend, "Opening a secure channel…", "", "", 0, 0
 			return m, tea.Batch(startSend(m.events, ctx, m.tcfg, m.prepped), waitForEvent(m.events), m.spinner.Tick)
 		case "esc", "q":
 			m.prepped = nil
@@ -661,7 +682,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 				m.cancel = cancel
 				m.events = make(chan tea.Msg, 64)
-				m.mode, m.status, m.done, m.total = modeReceive, "Connecting…", 0, 0
+				m.mode, m.status, m.notice, m.done, m.total = modeReceive, "Connecting…", "", 0, 0
 				return m, tea.Batch(startReceive(m.events, ctx, m.tcfg, m.paths, val), waitForEvent(m.events), m.spinner.Tick)
 			}
 			nm := m.enterBusy("Importing " + filepath.Base(val) + "…")
@@ -729,6 +750,7 @@ func (m *model) startInput(md mode) model {
 func (m *model) enterBusy(status string) model {
 	m.mode = modeBusy
 	m.status = status
+	m.notice = ""
 	m.done, m.total = 0, 0
 	m.events = make(chan tea.Msg, 64)
 	return *m
@@ -739,7 +761,7 @@ func (m *model) clearOp() {
 		m.cancel()
 		m.cancel = nil
 	}
-	m.code, m.status, m.done, m.total = "", "", 0, 0
+	m.code, m.status, m.notice, m.done, m.total = "", "", "", 0, 0
 	m.prepped = nil
 }
 
@@ -903,9 +925,18 @@ func (m model) confirmView() string {
 	return cardStyle.Render(body)
 }
 
+// noticeBlock renders the sticky advisory, if any, for the transfer screens.
+func (m model) noticeBlock() string {
+	if m.notice == "" {
+		return ""
+	}
+	return warnStyle.Render(m.notice) + "\n\n"
+}
+
 func (m model) sendView() string {
 	var b strings.Builder
 	b.WriteString(accentStyle.Bold(true).Render("Sending a session") + "\n\n")
+	b.WriteString(m.noticeBlock())
 	if m.code == "" {
 		b.WriteString(m.spinner.View() + " " + dimStyle.Render(m.status))
 	} else {
@@ -926,6 +957,7 @@ func (m model) sendView() string {
 func (m model) transferView(title string) string {
 	var b strings.Builder
 	b.WriteString(accentStyle.Bold(true).Render(title) + "\n\n")
+	b.WriteString(m.noticeBlock())
 	b.WriteString(m.spinner.View() + " " + dimStyle.Render(orDefault(m.status, "working…")) + "\n\n")
 	if m.total > 0 {
 		b.WriteString(m.progress.ViewAs(ratio(m.done, m.total)) + " " + dimStyle.Render(pct(m.done, m.total)) + "\n")

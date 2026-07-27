@@ -398,7 +398,7 @@ func runSend(args []string) error {
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 
-	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, CodeWords: *words}
+	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, CodeWords: *words, OnFallback: printFallback}
 	fmt.Println("Preparing a secure transfer...")
 	err = transfer.Send(ctx, tcfg, b.Name, bytes.NewReader(buf.Bytes()),
 		func(code string) {
@@ -449,7 +449,7 @@ func runReceive(args []string) error {
 	ctx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 
-	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay}
+	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, OnFallback: printFallback}
 	fmt.Println("Connecting...")
 	in, err := transfer.Receive(ctx, tcfg, code)
 	if err != nil {
@@ -505,6 +505,16 @@ func confirmSend(preview exporter.SharePreview) bool {
 		fmt.Println("  secrets : NOT scrubbed (--no-redact) - the raw transcript will be sent")
 	}
 	return confirm("Send it?")
+}
+
+// printFallback explains that the usual transfer server was unreachable and we
+// switched to the TLS one. The peer instructions matter as much as the notice:
+// two people only meet on the same mailbox, and a mismatch looks like waiting
+// forever rather than an error.
+func printFallback(mailbox, relay string, _ error) {
+	fmt.Println("\nThis network blocked the usual transfer server, so I switched to a backup.")
+	fmt.Println("The other side has to use the same one. Have them run this first:")
+	fmt.Printf("\n    export CLAUDE_TELEPORT_RENDEZVOUS=%s\n    export CLAUDE_TELEPORT_RELAY=%s\n\n", mailbox, relay)
 }
 
 // progressPrinter returns a progress callback that rewrites a single status

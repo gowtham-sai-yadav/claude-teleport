@@ -112,4 +112,26 @@ func TestCardsRectangular(t *testing.T) {
 			}
 		}
 	}
+
+	// A multi-line fallback notice is the widest thing that can appear inside a
+	// transfer card, so check the border still squares up with one present.
+	m.notice = "This network blocked the usual transfer server, so I switched to a backup.\n" +
+		"The other side must run these first, or you will not find each other:\n" +
+		"  export CLAUDE_TELEPORT_RENDEZVOUS=wss://mailbox.mw.leastauthority.com/v1\n" +
+		"  export CLAUDE_TELEPORT_RELAY=relay.mw.leastauthority.com:4001"
+	for name, card := range map[string]string{
+		"send+notice":    m.sendView(),
+		"receive+notice": m.transferView("Receiving a session"),
+	} {
+		lines := strings.Split(card, "\n")
+		want := lipgloss.Width(lines[0])
+		for i, ln := range lines {
+			if got := lipgloss.Width(ln); got != want {
+				t.Errorf("%s line %d width=%d, want %d\n%q", name, i, got, want, plain(ln))
+			}
+		}
+		if !strings.Contains(plain(card), "CLAUDE_TELEPORT_RENDEZVOUS") {
+			t.Errorf("%s: the peer instruction must be visible, it is the actionable part", name)
+		}
+	}
 }
