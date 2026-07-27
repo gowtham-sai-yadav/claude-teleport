@@ -24,6 +24,8 @@ import (
 // dead local address so the transfer must use the direct localhost path, which
 // keeps the test hermetic (no public network).
 func TestSendReceiveRoundTrip(t *testing.T) {
+	requireLocalWormhole(t)
+
 	rs := rendezvousservertest.NewServer()
 	defer rs.Close()
 
