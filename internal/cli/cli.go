@@ -16,6 +16,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
+	_ "github.com/gowtham-sai-yadav/claude-teleport/internal/agent/claudecode" // registers the Claude Code provider
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
 	"github.com/gowtham-sai-yadav/claude-teleport/internal/exporter"
@@ -246,22 +248,26 @@ func runSessions(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	tp, err := claudedir.Locate(*cfg)
+	// Listing goes through the provider registry so the command does not know how
+	// any particular tool stores its sessions. With only Claude Code registered
+	// this resolves to exactly the previous behaviour.
+	bound, err := agent.Resolve(agent.ClaudeCode, *cfg)
 	if err != nil {
 		return err
 	}
-	sessions, err := claudedir.ListSessions(tp)
+	sessions, err := bound.Provider.ListSessions(bound.Roots)
 	if err != nil {
 		return err
 	}
+	agent.SortSessions(sessions)
 	sessions = filterSessions(sessions, *project)
 
 	if *asJSON {
 		list := make([]SessionJSON, 0, len(sessions))
 		for _, s := range sessions {
 			list = append(list, SessionJSON{
-				Provider: ProviderClaudeCode,
-				ID:       s.ID, ShortID: s.ShortID(), Project: s.ProjectPath, Folder: s.Folder,
+				Provider: string(s.Provider),
+				ID:       s.ID, ShortID: s.ShortID, Project: s.ProjectPath, Folder: s.GroupKey,
 				Messages: s.Messages, Modified: s.ModTime.Format(time.RFC3339), SizeBytes: s.Size, Title: s.Title,
 			})
 		}
@@ -285,22 +291,24 @@ func runSessions(args []string) error {
 			proj = "(unknown)"
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\n",
-			s.ShortID(), s.ModTime.Format("2006-01-02 15:04"), s.Messages, proj, s.Title)
+			s.ShortID, s.ModTime.Format("2006-01-02 15:04"), s.Messages, proj, s.Title)
 	}
 	tw.Flush()
 	fmt.Printf("\n%d session(s). Share one with: claude-teleport share <ID>\n", len(sessions))
 	return nil
 }
 
-func filterSessions(in []claudedir.Session, needle string) []claudedir.Session {
+// filterSessions narrows a listing by a substring of the project path or the
+// provider's on-disk bucket name.
+func filterSessions(in []agent.Session, needle string) []agent.Session {
 	if needle == "" {
 		return in
 	}
 	needle = strings.ToLower(needle)
-	var out []claudedir.Session
+	var out []agent.Session
 	for _, s := range in {
 		if strings.Contains(strings.ToLower(s.ProjectPath), needle) ||
-			strings.Contains(strings.ToLower(s.Folder), needle) {
+			strings.Contains(strings.ToLower(s.GroupKey), needle) {
 			out = append(out, s)
 		}
 	}

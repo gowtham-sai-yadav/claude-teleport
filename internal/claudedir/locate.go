@@ -47,6 +47,15 @@ func Locate(override string) (Paths, error) {
 	}, nil
 }
 
+// Exists reports whether Claude Code actually has session history here. It looks
+// for the projects directory rather than the config directory, because running
+// `claude --version` is enough to create ~/.claude with nothing in it, and a
+// config dir with no history is not worth offering the user as a source.
+func Exists(p Paths) bool {
+	fi, err := os.Stat(p.ProjectsDir)
+	return err == nil && fi.IsDir()
+}
+
 type Project struct {
 	Folder       string // encoded folder name
 	FolderPath   string // absolute path to the folder on disk
