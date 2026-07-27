@@ -36,8 +36,8 @@ func sendInBackground(t *testing.T, ctx context.Context, cfg Config) (code strin
 		return c, func() error { return <-errCh }
 	case err := <-errCh:
 		t.Fatalf("send ended before producing a code: %v", err)
-	case <-time.After(60 * time.Second):
-		t.Fatal("no code within 60s")
+	case <-time.After(45 * time.Second):
+		t.Fatal("no code within 45s")
 	}
 	return "", nil
 }
@@ -50,12 +50,14 @@ func sendInBackground(t *testing.T, ctx context.Context, cfg Config) (code strin
 // caller had not read a byte yet. Reading the payload here is the whole point of
 // the test: a version that cancels the winner cannot pass it.
 func TestRaceReceiveKeepsWinnerAlive(t *testing.T) {
+	requireLocalWormhole(t)
+
 	primary := rendezvousservertest.NewServer()
 	defer primary.Close()
 	fallback := rendezvousservertest.NewServer()
 	defer fallback.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
 
 	// The sender is on the primary; the receiver must race and pick it.
@@ -89,13 +91,15 @@ func TestRaceReceiveKeepsWinnerAlive(t *testing.T) {
 // and the user watched a spinner forever. A stalled server is simulated by a
 // listener that accepts and holds, which is what the public default was doing.
 func TestSendStallsOverToFallback(t *testing.T) {
+	requireLocalWormhole(t)
+
 	stalled := newStalledListener(t)
 	defer stalled.Close()
 
 	fallback := rendezvousservertest.NewServer()
 	defer fallback.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	var (
