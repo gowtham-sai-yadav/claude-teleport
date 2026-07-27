@@ -43,10 +43,13 @@ func reasoningItem() string {
 	return `{"timestamp":"2026-07-01T10:00:01.500Z","type":"response_item","payload":{"type":"reasoning","id":"rs_1","summary":[],"encrypted_content":"gAAAAABopaque"}}`
 }
 
-// writeRollout drops a rollout into sessions/<date>/, compressing when asked.
+// writeRollout drops a rollout into sessions/<date>/, compressing when asked. The
+// date is given as "YYYY/MM/DD" and split into real path elements, so this builds
+// native separators instead of mixing them on Windows.
 func writeRollout(t *testing.T, root, date, name string, lines []string, compress bool) string {
 	t.Helper()
-	dir := filepath.Join(root, "sessions", date)
+	parts := append([]string{root, "sessions"}, strings.Split(date, "/")...)
+	dir := filepath.Join(parts...)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
