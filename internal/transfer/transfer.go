@@ -16,13 +16,13 @@
 package transfer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/psanford/wormhole-william/wormhole"
@@ -196,6 +196,12 @@ func unreachable(primary, fallback string, err error) error {
 		primary, fallback, err)
 }
 
+// worthRetryingElsewhere reports whether a failure is about reaching the server, as
+// opposed to something a different server would fail at identically.
+func worthRetryingElsewhere(err error) bool {
+	return errors.Is(err, errHandshakeStalled) || isReachabilityError(err)
+}
+
 // primaryMailbox names the mailbox a config will actually use, for messages.
 func (c Config) primaryMailbox() string {
 	switch {
@@ -210,89 +216,112 @@ func (c Config) primaryMailbox() string {
 // Progress reports bytes moved so far out of the total offered.
 type Progress func(done, total int64)
 
-// Send offers name/r over a wormhole. It calls onCode with the generated code as
-// soon as it is known, so the caller can show it to the user, then blocks until
-// the peer has received everything or ctx is cancelled. r must be seekable
-// because the protocol reports the size up front and then streams the bytes.
+// Send offers a bundle over a wormhole. It calls onCode with the code as soon as
+// one exists, so the caller can show it, then blocks until the peer has received
+// everything or ctx is cancelled.
 //
-// If the default mailbox cannot be reached - typically a network that blocks its
-// non-standard port - Send retries once over TLS/443 and reports the switch
-// through cfg.OnFallback. The peer must then use the same mailbox.
-func Send(ctx context.Context, cfg Config, name string, r io.ReadSeeker, onCode func(code string), progress Progress) error {
+// The payload is bytes rather than a reader because Send may offer it on two
+// mailboxes at once, and two attempts sharing one reader would each seek and read
+// it out from under the other. Both callers already hold the finished bundle in
+// memory, so this costs nothing.
+//
+// Unless the caller named a server, both the default mailbox and the TLS alternate
+// are tried simultaneously and the first to issue a code wins; the other is
+// dropped. Trying them in sequence meant waiting out the slow one first, which is
+// the difference between a code appearing in about two seconds and in fourteen -
+// and this is the one moment the user is sitting there watching for it.
+func Send(ctx context.Context, cfg Config, name string, payload []byte, onCode func(code string), progress Progress) error {
 	// A server the user named is used exactly as given: no second-guessing, and no
 	// silently routing their data somewhere they did not choose.
 	if !cfg.canFallback() {
-		return sendOnce(ctx, cfg, name, r, onCode, progress)
-	}
-
-	err := attemptSend(ctx, cfg, name, r, onCode, progress)
-	if err == nil || !worthRetryingElsewhere(err) {
-		return err
+		return sendOnce(ctx, cfg, name, bytes.NewReader(payload), onCode, progress)
 	}
 
 	fb := cfg.withFallback()
-	// The bundle may have been partially consumed before the failure surfaced, and
-	// the protocol streams from the current offset. Without a clean rewind a retry
-	// would send a truncated archive, so report the original failure rather than
-	// risk that.
-	if _, serr := r.Seek(0, io.SeekStart); serr != nil {
-		return unreachable(cfg.primaryMailbox(), "", err)
-	}
-	if cfg.OnFallback != nil {
-		cfg.OnFallback(fb.RendezvousURL, fb.TransitRelay, err)
-	}
-	// The alternate gets whatever time the caller allowed, unbounded by the
-	// handshake window: once it answers, the wait is for the peer, not the server.
-	if ferr := sendOnce(ctx, fb, name, r, onCode, progress); ferr != nil {
-		if worthRetryingElsewhere(ferr) {
-			return unreachable(cfg.primaryMailbox(), fb.RendezvousURL, ferr)
-		}
-		return ferr
-	}
-	return nil
-}
 
-// attemptSend runs one send, giving the server only handshakeTimeout to produce a
-// code. Once a code exists the handshake has plainly worked, so the deadline is
-// dropped and the send runs for as long as the caller's context allows - the
-// remaining wait is for a human to type the code, which can take minutes.
-func attemptSend(ctx context.Context, cfg Config, name string, r io.ReadSeeker, onCode func(code string), progress Progress) error {
-	attemptCtx, abandon := context.WithCancel(ctx)
-	defer abandon()
-
-	coded := make(chan struct{})
-	var once sync.Once
-	announce := func(code string) {
-		once.Do(func() { close(coded) })
-		if onCode != nil {
-			onCode(code)
-		}
+	type coded struct {
+		code       string
+		isFallback bool
 	}
+	type finished struct {
+		err        error
+		isFallback bool
+	}
+	codes := make(chan coded, 2)
+	done := make(chan finished, 2)
 
-	done := make(chan error, 1)
-	go func() { done <- sendOnce(attemptCtx, cfg, name, r, announce, progress) }()
+	ctxA, stopA := context.WithCancel(ctx)
+	ctxB, stopB := context.WithCancel(ctx)
+	// Safe to defer both here, unlike in Receive: a send is finished by the time this
+	// returns, so nothing is left reading. The loser is still cancelled the moment a
+	// winner appears, rather than waiting for this.
+	defer stopA()
+	defer stopB()
 
+	launch := func(attemptCtx context.Context, c Config, isFallback bool) {
+		go func() {
+			// A reader of its own, so the two attempts cannot disturb each other.
+			err := sendOnce(attemptCtx, c, name, bytes.NewReader(payload),
+				func(code string) { codes <- coded{code, isFallback} }, progress)
+			done <- finished{err, isFallback}
+		}()
+	}
+	launch(ctxA, cfg, false)
+	launch(ctxB, fb, true)
+
+	// A backstop for the case neither server answers: without it, two stalled
+	// mailboxes would hang until the caller's own deadline.
 	timer := time.NewTimer(handshakeTimeout)
 	defer timer.Stop()
 
-	select {
-	case err := <-done:
-		return err // finished or failed before any code appeared
-	case <-coded:
-		return <-done // committed to this server; wait as long as the caller allows
-	case <-timer.C:
-		abandon()
-		<-done // let the attempt unwind before reusing the reader
-		return errHandshakeStalled
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
+	var (
+		firstErr error
+		ended    int
+	)
+	for {
+		select {
+		case c := <-codes:
+			if c.isFallback {
+				stopA()
+				if cfg.OnFallback != nil {
+					cfg.OnFallback(fb.RendezvousURL, fb.TransitRelay, errHandshakeStalled)
+				}
+			} else {
+				stopB()
+			}
+			if onCode != nil {
+				onCode(c.code)
+			}
+			// Committed. Wait for this attempt to finish, ignoring the loser's
+			// unwinding, and give it as long as the caller allows: the remaining wait
+			// is for a person to type the code.
+			for {
+				res := <-done
+				if res.isFallback == c.isFallback {
+					return res.err
+				}
+			}
 
-// worthRetryingElsewhere reports whether a failure is about reaching the server,
-// as opposed to something a different server would fail at identically.
-func worthRetryingElsewhere(err error) bool {
-	return errors.Is(err, errHandshakeStalled) || isReachabilityError(err)
+		case res := <-done:
+			ended++
+			// A cancellation here is this function dropping its own loser.
+			if firstErr == nil && !errors.Is(res.err, context.Canceled) {
+				firstErr = res.err
+			}
+			if ended == 2 {
+				if firstErr == nil {
+					firstErr = errHandshakeStalled
+				}
+				return unreachable(cfg.primaryMailbox(), fb.RendezvousURL, firstErr)
+			}
+
+		case <-timer.C:
+			return unreachable(cfg.primaryMailbox(), fb.RendezvousURL, errHandshakeStalled)
+
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func sendOnce(ctx context.Context, cfg Config, name string, r io.ReadSeeker, onCode func(code string), progress Progress) error {

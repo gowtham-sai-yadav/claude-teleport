@@ -42,7 +42,7 @@ func TestSendReceiveRoundTrip(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sendErr = Send(ctx, cfg, "bundle.tgz", bytes.NewReader(payload),
+		sendErr = Send(ctx, cfg, "bundle.tgz", payload,
 			func(code string) { codeCh <- code },
 			nil)
 	}()

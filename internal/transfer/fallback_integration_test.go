@@ -9,7 +9,6 @@
 package transfer
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net"
@@ -28,7 +27,7 @@ func sendInBackground(t *testing.T, ctx context.Context, cfg Config) (code strin
 	codeCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- Send(ctx, cfg, "bundle.tgz", bytes.NewReader([]byte(payload)),
+		errCh <- Send(ctx, cfg, "bundle.tgz", []byte(payload),
 			func(c string) { codeCh <- c }, nil)
 	}()
 	select {
@@ -127,13 +126,13 @@ func TestSendStallsOverToFallback(t *testing.T) {
 	if got != fallback.WebSocketURL() {
 		t.Errorf("expected a fallback to %q, got %q", fallback.WebSocketURL(), got)
 	}
-	// It must give up on the stalled server rather than wait for the caller's
-	// deadline, and it must not give up so eagerly that a slow server is abandoned.
-	if elapsed < handshakeTimeout {
-		t.Errorf("fell back after %v, sooner than the %v handshake window", elapsed, handshakeTimeout)
-	}
-	if elapsed > handshakeTimeout+30*time.Second {
-		t.Errorf("took %v to fall back; the stall window is not bounding it", elapsed)
+	// Both mailboxes are tried at once, so a stalled one costs nothing: the healthy
+	// server answers on its own schedule and the code appears immediately. Waiting
+	// out the stalled one first is the behaviour this replaced, and the whole point
+	// of the change - so the assertion is that it did NOT wait.
+	if elapsed >= handshakeTimeout {
+		t.Errorf("took %v to produce a code, which is the %v stall window: the attempts are running in sequence, not in parallel",
+			elapsed, handshakeTimeout)
 	}
 
 	// And the transfer still completes, on the server that answered.
@@ -174,7 +173,7 @@ func TestExplicitServerIsNotSecondGuessed(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- Send(ctx, cfg, "b.tgz", bytes.NewReader([]byte(payload)), func(string) {}, nil)
+		done <- Send(ctx, cfg, "b.tgz", []byte(payload), func(string) {}, nil)
 	}()
 	select {
 	case <-done:

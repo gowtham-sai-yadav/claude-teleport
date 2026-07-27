@@ -3,7 +3,6 @@
 package transfer
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"sync"
@@ -81,7 +80,7 @@ func tryLocalTransfer() (ok bool, why string) {
 		codeCh := make(chan string, 1)
 		sendDone := make(chan error, 1)
 		go func() {
-			sendDone <- Send(ctx, cfg, "probe.bin", bytes.NewReader([]byte(probePayload)),
+			sendDone <- Send(ctx, cfg, "probe.bin", []byte(probePayload),
 				func(c string) { codeCh <- c }, nil)
 		}()
 
