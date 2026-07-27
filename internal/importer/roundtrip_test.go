@@ -133,10 +133,10 @@ func TestExportImportRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), `"cwd":"`+newPath+`"`) {
+	if !strings.Contains(string(body), `"cwd":`+jsonQuoted(t, newPath)) {
 		t.Errorf("cwd was not rewritten to %q:\n%s", newPath, firstLine(string(body)))
 	}
-	if strings.Contains(string(body), `"cwd":"`+oldPath+`"`) {
+	if strings.Contains(string(body), `"cwd":`+jsonQuoted(t, oldPath)) {
 		t.Errorf("old cwd %q still present after import", oldPath)
 	}
 	// Without --deep, prose mentions are deliberately left alone.
@@ -345,10 +345,10 @@ func TestSharedSessionAttachesToCwd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(body), `"cwd":"`+srcProject+`"`) {
+	if strings.Contains(string(body), `"cwd":`+jsonQuoted(t, srcProject)) {
 		t.Errorf("transcript still points at the sender's path %q", srcProject)
 	}
-	if !strings.Contains(string(body), `"cwd":"`+plan.AttachedTo+`"`) {
+	if !strings.Contains(string(body), `"cwd":`+jsonQuoted(t, plan.AttachedTo)) {
 		t.Errorf("transcript cwd was not rewritten to %q:\n%s", plan.AttachedTo, firstLine(string(body)))
 	}
 }
@@ -387,6 +387,23 @@ func rewriteManifest(t *testing.T, src string, mutate func(map[string]any)) stri
 		t.Fatal(err)
 	}
 	return out
+}
+
+// jsonQuoted renders s as it appears inside a JSON document, quotes included.
+//
+// Assertions about transcript contents must go through this rather than
+// concatenating a raw path. A transcript is JSON, so on Windows a path is stored
+// with escaped separators ("C:\\Users\\bob") - which is exactly what the importer
+// writes, via json.Marshal in newPathRewriter. Comparing the raw path would fail
+// on Windows while the product was behaving correctly, and this way the assertion
+// also covers the escaping.
+func jsonQuoted(t *testing.T, s string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 func firstLine(s string) string {
