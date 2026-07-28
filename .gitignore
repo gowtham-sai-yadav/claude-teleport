@@ -1,9 +1,12 @@
 # build output
+/entangle
 /claude-teleport
 /dist/
 
 # bundles produced by the tool
 *.tgz
+entangle-backup-*
+entangle-session-*
 claude-teleport-backup-*
 
 # OS cruft

@@ -6,7 +6,7 @@ package manifest
 import "fmt"
 
 const (
-	Tool = "claude-teleport"
+	Tool = "entangle"
 
 	// SchemaVersion is stamped into every bundle this build writes.
 	//
@@ -110,6 +110,6 @@ type UnsupportedSchemaError struct {
 }
 
 func (e *UnsupportedSchemaError) Error() string {
-	return fmt.Sprintf("this bundle was made by a newer claude-teleport (bundle format %d, this build reads up to %d). "+
-		"Run `claude-teleport update` and try again.", e.Got, e.Max)
+	return fmt.Sprintf("this bundle was made by a newer entangle (bundle format %d, this build reads up to %d). "+
+		"Run `entangle update` and try again.", e.Got, e.Max)
 }

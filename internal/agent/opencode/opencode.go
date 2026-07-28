@@ -34,7 +34,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
 )
 
 // Keys for opencode-specific locations carried in agent.Roots.Extra.
@@ -196,7 +196,7 @@ func (Provider) ListSessions(r agent.Roots) ([]agent.Session, error) {
 		// The schema changed under us, or the CLI printed something unexpected.
 		// Say so plainly; do not pretend the user has no sessions.
 		return nil, fmt.Errorf("could not read opencode's session list (its storage format may have changed; "+
-			"try updating claude-teleport): %w", err)
+			"try updating entangle): %w", err)
 	}
 
 	out := make([]agent.Session, 0, len(rows))

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
+	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
+	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
 )
 
 // The archive layout is a compatibility surface, not an implementation detail:

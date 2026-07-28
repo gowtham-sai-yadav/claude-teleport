@@ -1,4 +1,4 @@
-// Package transfer moves a claude-teleport bundle between two machines over an
+// Package transfer moves a entangle bundle between two machines over an
 // end-to-end-encrypted channel, so a session can be handed off with a short
 // spoken code instead of a file the user has to copy around.
 //
@@ -9,7 +9,7 @@
 // learns the code, and the bulk data travels end-to-end encrypted over either a
 // direct connection or a relay that only ever sees ciphertext.
 //
-// This package deliberately exposes just what claude-teleport needs: send a
+// This package deliberately exposes just what entangle needs: send a
 // bundle we already built, and receive one as a stream we can hand to the
 // importer. Everything else (which server, how many code words) is
 // configuration.
@@ -29,14 +29,15 @@ import (
 )
 
 // AppID namespaces our transfers on the rendezvous server. Because two clients
-// can only meet if their AppID matches, using our own means a claude-teleport
-// code only ever pairs with another claude-teleport client, never a stranger on
+// can only meet if their AppID matches, using our own means a entangle
+// code only ever pairs with another entangle client, never a stranger on
 // the public wormhole network who happened to be handed the same words.
 //
-// This string is wire compatibility: two peers meet only if it matches exactly,
-// and there is no way to negotiate it. Never change it, not even to match a
-// renamed product - doing so would silently break send/receive against every
-// version already installed.
+// This string is wire compatibility, not a name. Two peers meet only if it
+// matches exactly and there is no way to negotiate it, so it must never change -
+// including when the product is renamed. It still reads "claude-teleport" because
+// that is what every copy already installed is using, and it has to keep matching
+// them. A test pins the literal value.
 const AppID = "github.com/gowtham-sai-yadav/claude-teleport"
 
 // The library's default mailbox speaks plain HTTP on port 4000 and its default
@@ -364,7 +365,7 @@ func (in *Incoming) Read(p []byte) (int, error) { return in.r.Read(p) }
 
 // Receive connects with the given code and returns the incoming bundle. The
 // caller must read it to completion for the sender's transfer to finish. A
-// transfer that is not a single file is rejected, since a claude-teleport
+// transfer that is not a single file is rejected, since a entangle
 // bundle is always one archive.
 //
 // Like Send, an unreachable default mailbox is retried once over TLS/443. Both

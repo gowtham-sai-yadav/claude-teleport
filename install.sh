@@ -1,7 +1,7 @@
 #!/bin/sh
-# claude-teleport installer.
+# entangle installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/gowtham-sai-yadav/claude-teleport/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/gowtham-sai-yadav/entangle/main/install.sh | sh
 #
 # Downloads the right prebuilt binary for your machine from the latest GitHub
 # release, verifies its SHA-256 checksum, and installs it onto your PATH.
@@ -11,8 +11,8 @@
 #   INSTALL_DIR=~/bin   install location (default: /usr/local/bin, or ~/.local/bin without sudo)
 set -eu
 
-REPO="gowtham-sai-yadav/claude-teleport"
-BINARY="claude-teleport"
+REPO="gowtham-sai-yadav/entangle"
+BINARY="entangle"
 VERSION="${VERSION:-latest}"
 
 say() { printf '%s\n' "$*"; }

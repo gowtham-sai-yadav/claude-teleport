@@ -2,27 +2,31 @@
 # publishes the GitHub release with checksums, and updates the Homebrew tap,
 # the Scoop bucket, and the .deb/.rpm packages, all from this one file.
 #
-# Asset names are kept identical to the previous hand-rolled workflow
-# (claude-teleport-<os>-<arch> and SHA256SUMS.txt) so install.sh keeps working.
+# Assets are published under BOTH the current name and the pre-rename one
+# (entangle-<os>-<arch> and claude-teleport-<os>-<arch>), because a binary
+# installed before the rename asks GitHub for that exact old filename when it
+# self-updates. Without the duplicate, every existing install's `update` reports
+# that no build exists for their machine. Drop the legacy archive a few releases
+# after the rename has settled.
 #
 # Validate locally without publishing:
 #   goreleaser check
 #   goreleaser release --snapshot --skip=publish --clean
 version: 2
 
-project_name: claude-teleport
+project_name: entangle
 
 builds:
-  - id: claude-teleport
+  - id: entangle
     main: .
-    binary: claude-teleport
+    binary: entangle
     env:
       - CGO_ENABLED=0
     flags:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/gowtham-sai-yadav/claude-teleport/internal/cli.version={{ .Version }}
+      - -X github.com/gowtham-sai-yadav/entangle/internal/cli.version={{ .Version }}
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ignore:
@@ -36,6 +40,13 @@ archives:
     formats: [binary]
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
 
+  # Same binaries, published again under the pre-rename filename so that copies
+  # installed as claude-teleport can still update themselves onto current code.
+  # Temporary: remove once those installs have had time to migrate.
+  - id: legacy-name
+    formats: [binary]
+    name_template: "claude-teleport-{{ .Os }}-{{ .Arch }}"
+
 checksum:
   name_template: "SHA256SUMS.txt"
   algorithm: sha256
@@ -43,27 +54,27 @@ checksum:
 # A Homebrew formula, not a cask. Casks quarantine their download, so macOS
 # Gatekeeper blocks our unsigned binary; formulas install CLI binaries without
 # quarantine and stage a bare binary correctly. Install with
-# `brew install gowtham-sai-yadav/tap/claude-teleport` (no --cask).
+# `brew install gowtham-sai-yadav/tap/entangle` (no --cask).
 brews:
-  - name: claude-teleport
+  - name: entangle
     repository:
       owner: gowtham-sai-yadav
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-    homepage: "https://github.com/gowtham-sai-yadav/claude-teleport"
-    description: "Move your Claude Code history between machines, with paths fixed automatically"
+    homepage: "https://github.com/gowtham-sai-yadav/entangle"
+    description: "Hand a live coding session to anyone - Claude Code, Codex, or opencode"
     license: "MIT"
     commit_author:
       name: goreleaser
       email: noreply@users.noreply.github.com
     test: |
-      system "#{bin}/claude-teleport", "version"
+      system "#{bin}/entangle", "version"
 
 nfpms:
   - id: packages
-    package_name: claude-teleport
-    homepage: "https://github.com/gowtham-sai-yadav/claude-teleport"
-    description: "Move your Claude Code history between machines, with paths fixed automatically"
+    package_name: entangle
+    homepage: "https://github.com/gowtham-sai-yadav/entangle"
+    description: "Hand a live coding session to anyone - Claude Code, Codex, or opencode"
     maintainer: "Gowtham Sai Yadav <noreply@users.noreply.github.com>"
     license: "MIT"
     formats: [deb, rpm]
@@ -71,6 +82,6 @@ nfpms:
 release:
   github:
     owner: gowtham-sai-yadav
-    name: claude-teleport
+    name: entangle
   # Keep the auto-generated notes from commits.
   mode: replace

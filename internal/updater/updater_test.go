@@ -29,12 +29,12 @@ func TestAssetFor(t *testing.T) {
 		goos, goarch, want string
 		wantErr            bool
 	}{
-		{"darwin", "arm64", "claude-teleport-darwin-arm64", false},
-		{"darwin", "amd64", "claude-teleport-darwin-amd64", false},
-		{"linux", "amd64", "claude-teleport-linux-amd64", false},
-		{"linux", "arm64", "claude-teleport-linux-arm64", false},
-		{"windows", "amd64", "claude-teleport-windows-amd64.exe", false},
-		{"windows", "arm64", "claude-teleport-windows-amd64.exe", false}, // falls back to amd64
+		{"darwin", "arm64", "entangle-darwin-arm64", false},
+		{"darwin", "amd64", "entangle-darwin-amd64", false},
+		{"linux", "amd64", "entangle-linux-amd64", false},
+		{"linux", "arm64", "entangle-linux-arm64", false},
+		{"windows", "amd64", "entangle-windows-amd64.exe", false},
+		{"windows", "arm64", "entangle-windows-amd64.exe", false}, // falls back to amd64
 		{"plan9", "amd64", "", true},
 		{"linux", "386", "", true},
 	}

@@ -1,6 +1,6 @@
 {
-  "name": "claude-teleport",
-  "displayName": "claude-teleport",
+  "name": "entangle",
+  "displayName": "entangle",
   "description": "Hand a Claude Code session to a teammate over an encrypted code, or share it to a file — without leaving VS Code.",
   "version": "0.1.0",
   "publisher": "gowtham-sai-yadav",
@@ -20,11 +20,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/gowtham-sai-yadav/claude-teleport"
+    "url": "https://github.com/gowtham-sai-yadav/entangle"
   },
   "homepage": "https://gowthamsai.in/teleport/",
   "bugs": {
-    "url": "https://github.com/gowtham-sai-yadav/claude-teleport/issues"
+    "url": "https://github.com/gowtham-sai-yadav/entangle/issues"
   },
   "activationEvents": [
     "onStartupFinished"
@@ -34,16 +34,16 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "claudeTeleport",
+          "id": "entangle",
           "title": "Teleport",
           "icon": "media/teleport.svg"
         }
       ]
     },
     "views": {
-      "claudeTeleport": [
+      "entangle": [
         {
-          "id": "claudeTeleport.sessions",
+          "id": "entangle.sessions",
           "name": "Sessions",
           "icon": "media/teleport.svg"
         }
@@ -51,89 +51,89 @@
     },
     "viewsWelcome": [
       {
-        "view": "claudeTeleport.sessions",
-        "contents": "No Claude Code sessions to show.\n[Refresh](command:claude-teleport.refresh)\n[Receive a session](command:claude-teleport.receive)\n\nThe claude-teleport CLI does the work — make sure it is installed.\n[Install claude-teleport](https://gowthamsai.in/teleport/#install)"
+        "view": "entangle.sessions",
+        "contents": "No Claude Code sessions to show.\n[Refresh](command:entangle.refresh)\n[Receive a session](command:entangle.receive)\n\nThe entangle CLI does the work — make sure it is installed.\n[Install entangle](https://gowthamsai.in/teleport/#install)"
       }
     ],
     "commands": [
       {
-        "command": "claude-teleport.send",
+        "command": "entangle.send",
         "title": "Send a session by code",
         "category": "Teleport"
       },
       {
-        "command": "claude-teleport.receive",
+        "command": "entangle.receive",
         "title": "Receive a session",
         "category": "Teleport",
         "icon": "$(inbox)"
       },
       {
-        "command": "claude-teleport.share",
+        "command": "entangle.share",
         "title": "Share a session to a file",
         "category": "Teleport"
       },
       {
-        "command": "claude-teleport.sessions",
+        "command": "entangle.sessions",
         "title": "Browse sessions",
         "category": "Teleport"
       },
       {
-        "command": "claude-teleport.menu",
+        "command": "entangle.menu",
         "title": "Open menu",
         "category": "Teleport"
       },
       {
-        "command": "claude-teleport.refresh",
+        "command": "entangle.refresh",
         "title": "Refresh sessions",
         "category": "Teleport",
         "icon": "$(refresh)"
       },
       {
-        "command": "claude-teleport.sendItem",
+        "command": "entangle.sendItem",
         "title": "Send by code",
         "category": "Teleport",
         "icon": "$(radio-tower)"
       },
       {
-        "command": "claude-teleport.shareItem",
+        "command": "entangle.shareItem",
         "title": "Share to a file",
         "category": "Teleport",
         "icon": "$(file)"
       },
       {
-        "command": "claude-teleport.copyItemId",
+        "command": "entangle.copyItemId",
         "title": "Copy session id",
         "category": "Teleport"
       }
     ],
     "menus": {
       "commandPalette": [
-        { "command": "claude-teleport.menu", "when": "false" },
-        { "command": "claude-teleport.sendItem", "when": "false" },
-        { "command": "claude-teleport.shareItem", "when": "false" },
-        { "command": "claude-teleport.copyItemId", "when": "false" }
+        { "command": "entangle.menu", "when": "false" },
+        { "command": "entangle.sendItem", "when": "false" },
+        { "command": "entangle.shareItem", "when": "false" },
+        { "command": "entangle.copyItemId", "when": "false" }
       ],
       "view/title": [
-        { "command": "claude-teleport.receive", "when": "view == claudeTeleport.sessions", "group": "navigation@1" },
-        { "command": "claude-teleport.refresh", "when": "view == claudeTeleport.sessions", "group": "navigation@2" }
+        { "command": "entangle.receive", "when": "view == entangle.sessions", "group": "navigation@1" },
+        { "command": "entangle.refresh", "when": "view == entangle.sessions", "group": "navigation@2" }
       ],
       "view/item/context": [
-        { "command": "claude-teleport.sendItem", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "inline@1" },
-        { "command": "claude-teleport.shareItem", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "inline@2" },
-        { "command": "claude-teleport.sendItem", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "1_actions@1" },
-        { "command": "claude-teleport.shareItem", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "1_actions@2" },
-        { "command": "claude-teleport.copyItemId", "when": "view == claudeTeleport.sessions && viewItem == session", "group": "1_actions@3" }
+        { "command": "entangle.sendItem", "when": "view == entangle.sessions && viewItem == session", "group": "inline@1" },
+        { "command": "entangle.shareItem", "when": "view == entangle.sessions && viewItem == session", "group": "inline@2" },
+        { "command": "entangle.sendItem", "when": "view == entangle.sessions && viewItem == session", "group": "1_actions@1" },
+        { "command": "entangle.shareItem", "when": "view == entangle.sessions && viewItem == session", "group": "1_actions@2" },
+        { "command": "entangle.copyItemId", "when": "view == entangle.sessions && viewItem == session", "group": "1_actions@3" }
       ]
     },
     "configuration": {
-      "title": "claude-teleport",
+      "title": "entangle",
       "properties": {
-        "claude-teleport.path": {
+        "entangle.path": {
           "type": "string",
-          "default": "claude-teleport",
-          "description": "Path to the claude-teleport binary. Leave as the default if it is on your PATH."
+          "default": "entangle",
+          "description": "Path to the entangle binary. Leave as the default if it is on your PATH."
         },
-        "claude-teleport.configDir": {
+        "entangle.configDir": {
           "type": "string",
           "default": "",
           "description": "Override the Claude config dir (passed to the CLI as --config-dir). Leave empty for the default (~/.claude)."

@@ -1,4 +1,4 @@
-// Package updater lets claude-teleport upgrade itself in place: it asks GitHub
+// Package updater lets entangle upgrade itself in place: it asks GitHub
 // for the latest release, downloads the binary built for this machine, verifies
 // its SHA-256 checksum, and atomically swaps it for the running executable.
 //
@@ -24,7 +24,7 @@ import (
 )
 
 // DefaultRepo is the GitHub repository releases are pulled from.
-const DefaultRepo = "gowtham-sai-yadav/claude-teleport"
+const DefaultRepo = "gowtham-sai-yadav/entangle"
 
 func client() *http.Client { return &http.Client{Timeout: 60 * time.Second} }
 
@@ -34,7 +34,7 @@ func get(ctx context.Context, url string) (*http.Response, error) {
 		return nil, err
 	}
 	// GitHub rejects requests without a User-Agent.
-	req.Header.Set("User-Agent", "claude-teleport-updater")
+	req.Header.Set("User-Agent", "entangle-updater")
 	return client().Do(req)
 }
 
@@ -119,8 +119,24 @@ func parse(v string) []int {
 // arm64 uses the amd64 build, which runs under emulation, since that is the
 // only Windows binary published.
 func AssetFor(goos, goarch string) (string, error) {
+	return assetNamed("entangle", goos, goarch)
+}
+
+// LegacyAssetFor returns the asset name this project published before it was
+// renamed to entangle.
+//
+// Binaries installed under the old name ask for that exact filename when they
+// self-update. Releases carry both names for a few versions so those copies can
+// still update themselves onto current code, which then tells the user how to
+// reinstall. Without this their update simply reports that no build exists for
+// their machine, which looks like the project died.
+func LegacyAssetFor(goos, goarch string) (string, error) {
+	return assetNamed("claude-teleport", goos, goarch)
+}
+
+func assetNamed(base, goos, goarch string) (string, error) {
 	if goos == "windows" {
-		return "claude-teleport-windows-amd64.exe", nil
+		return base + "-windows-amd64.exe", nil
 	}
 	if goos != "linux" && goos != "darwin" {
 		return "", fmt.Errorf("no prebuilt binary for %s", goos)
@@ -128,7 +144,7 @@ func AssetFor(goos, goarch string) (string, error) {
 	if goarch != "amd64" && goarch != "arm64" {
 		return "", fmt.Errorf("no prebuilt binary for %s/%s", goos, goarch)
 	}
-	return fmt.Sprintf("claude-teleport-%s-%s", goos, goarch), nil
+	return fmt.Sprintf("%s-%s-%s", base, goos, goarch), nil
 }
 
 // Apply downloads the release binary for this machine, verifies its checksum,
@@ -145,7 +161,18 @@ func Apply(ctx context.Context, repo, tag string, progress func(done, total int6
 
 	bin, err := download(ctx, base+"/"+asset, progress)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", asset, err)
+		// Releases published before the rename only carry the old asset name. Try
+		// it rather than telling someone on an older version that no build exists
+		// for their machine, which reads as the project having vanished.
+		legacy, lerr := LegacyAssetFor(runtime.GOOS, runtime.GOARCH)
+		if lerr != nil {
+			return fmt.Errorf("download %s: %w", asset, err)
+		}
+		legacyBin, legacyErr := download(ctx, base+"/"+legacy, progress)
+		if legacyErr != nil {
+			return fmt.Errorf("download %s: %w", asset, err)
+		}
+		asset, bin = legacy, legacyBin
 	}
 
 	if err := verifyChecksum(ctx, base+"/SHA256SUMS.txt", asset, bin); err != nil {
@@ -233,7 +260,7 @@ func replaceExecutable(newContent []byte) error {
 
 	// Write the new binary next to the current one so the rename stays on the
 	// same filesystem (and so a permission problem surfaces here, clearly).
-	tmp, err := os.CreateTemp(dir, ".claude-teleport-update-*")
+	tmp, err := os.CreateTemp(dir, ".entangle-update-*")
 	if err != nil {
 		return fmt.Errorf("cannot write to %s. Re-run with sudo, or reinstall with the install script: %w", dir, err)
 	}

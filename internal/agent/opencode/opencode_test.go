@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
 )
 
 // The fixtures below mirror what a real `opencode db "<SQL>" --format json`

@@ -11,8 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/agent"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/transfer"
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/transfer"
 )
 
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -27,7 +27,7 @@ func fakeModel(t *testing.T, w, h int) model {
 	now := time.Now()
 	items := []list.Item{
 		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "8e3d21d1-aa11-4f00-9c0f-abc", ShortID: "8e3d21d1", ProjectPath: "/Users/gowtham/work/api-service", Title: "refactor the auth layer", Messages: 42, ModTime: now.Add(-2 * time.Hour)}},
-		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "1f9c77a2-bb22-4e11-8d1a-def", ShortID: "1f9c77a2", ProjectPath: "/Users/gowtham/side/claude-teleport", Title: "build the interactive TUI", Messages: 128, ModTime: now.Add(-25 * time.Hour)}},
+		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "1f9c77a2-bb22-4e11-8d1a-def", ShortID: "1f9c77a2", ProjectPath: "/Users/gowtham/side/entangle", Title: "build the interactive TUI", Messages: 128, ModTime: now.Add(-25 * time.Hour)}},
 		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "44ab90ee-cc33-4d22-7e2b-ghi", ShortID: "44ab90ee", ProjectPath: "/Users/gowtham/work/dash", Title: "fix the flaky pagination test", Messages: 9, ModTime: now.Add(-9 * time.Minute)}},
 	}
 	mm, _ = m.Update(sessionsMsg{items: items, tools: 1})
@@ -45,7 +45,7 @@ func TestRenderScreens(t *testing.T) {
 
 	m.prepped = &prepared{
 		provider: agent.ClaudeCode,
-		name:     "claude-teleport-session-8e3d21d1.tgz",
+		name:     "entangle-session-8e3d21d1.tgz",
 		preview: agent.Preview{
 			Title: "refactor the auth layer", ShortID: "8e3d21d1",
 			ProjectPath: "/Users/gowtham/work/api-service",
@@ -118,8 +118,8 @@ func TestCardsRectangular(t *testing.T) {
 	// transfer card, so check the border still squares up with one present.
 	m.notice = "This network blocked the usual transfer server, so I switched to a backup.\n" +
 		"The other side must run these first, or you will not find each other:\n" +
-		"  export CLAUDE_TELEPORT_RENDEZVOUS=wss://mailbox.mw.leastauthority.com/v1\n" +
-		"  export CLAUDE_TELEPORT_RELAY=relay.mw.leastauthority.com:4001"
+		"  export ENTANGLE_RENDEZVOUS=wss://mailbox.mw.leastauthority.com/v1\n" +
+		"  export ENTANGLE_RELAY=relay.mw.leastauthority.com:4001"
 	for name, card := range map[string]string{
 		"send+notice":    m.sendView(),
 		"receive+notice": m.transferView("Receiving a session"),
@@ -131,7 +131,7 @@ func TestCardsRectangular(t *testing.T) {
 				t.Errorf("%s line %d width=%d, want %d\n%q", name, i, got, want, plain(ln))
 			}
 		}
-		if !strings.Contains(plain(card), "CLAUDE_TELEPORT_RENDEZVOUS") {
+		if !strings.Contains(plain(card), "ENTANGLE_RENDEZVOUS") {
 			t.Errorf("%s: the peer instruction must be visible, it is the actionable part", name)
 		}
 	}

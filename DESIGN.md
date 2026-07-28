@@ -1,6 +1,6 @@
 # Design notes
 
-This document records why claude-teleport is built the way it is: the problems
+This document records why entangle is built the way it is: the problems
 that are not obvious from the outside, the decisions taken, and the tradeoffs
 accepted. It is written for someone deciding whether to trust, extend, or
 review the code.
@@ -128,9 +128,9 @@ model, and the reasoning behind the choices is:
   and it interoperates with the reference client. It is wrapped behind a tiny
   `transfer` package that exposes only send and receive, so the rest of the tool
   is insulated from it.
-- **A claude-teleport-specific AppID.** Two wormhole clients can only meet if
-  their AppID matches. Using our own namespace means a claude-teleport code only
-  ever pairs with another claude-teleport client, never a stranger on the public
+- **A entangle-specific AppID.** Two wormhole clients can only meet if
+  their AppID matches. Using our own namespace means a entangle code only
+  ever pairs with another entangle client, never a stranger on the public
   network who happened to be handed the same words.
 - **Self-hostable.** The rendezvous and relay addresses are overridable by flag
   or environment variable, so an organization can run its own servers and depend

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
+	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
+	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
 )
 
 // TestPrepareShareBuildsSessionBundle checks the in-memory build path: given a

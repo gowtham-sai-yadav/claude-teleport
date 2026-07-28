@@ -31,7 +31,7 @@ func TestSendReceiveRoundTrip(t *testing.T) {
 
 	cfg := Config{RendezvousURL: rs.WebSocketURL(), TransitRelay: "127.0.0.1:1"}
 
-	payload := bytes.Repeat([]byte("claude-teleport session bytes\n"), 4000) // ~120 KB
+	payload := bytes.Repeat([]byte("entangle session bytes\n"), 4000) // ~120 KB
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

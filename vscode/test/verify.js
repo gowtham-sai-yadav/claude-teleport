@@ -41,7 +41,7 @@ const vscodeStub = {
     createTerminal() { return { show() {}, sendText() {}, dispose() {} }; },
   },
   workspace: {
-    getConfiguration() { return { get: (k) => (k === 'path' ? 'claude-teleport' : '') }; },
+    getConfiguration() { return { get: (k) => (k === 'path' ? 'entangle' : '') }; },
   },
 };
 
@@ -63,7 +63,7 @@ assert.doesNotThrow(() => ext.deactivate(), 'deactivate() threw');
 
 const registered = new Set(calls.commands);
 assert.strictEqual(calls.statusBars, 1, 'expected exactly one status bar item');
-assert.ok(calls.treeViews.includes('claudeTeleport.sessions'), 'sessions tree view was not created');
+assert.ok(calls.treeViews.includes('entangle.sessions'), 'sessions tree view was not created');
 assert.ok(subscriptions.length >= registered.size + 2, 'not everything was pushed to context.subscriptions');
 
 // ---- 2) manifest wiring ----------------------------------------------------
@@ -84,12 +84,12 @@ for (const [menu, items] of Object.entries(menus)) {
 
 // config keys the code reads must exist
 const props = pkg.contributes.configuration.properties;
-for (const key of ['claude-teleport.path', 'claude-teleport.configDir']) {
+for (const key of ['entangle.path', 'entangle.configDir']) {
   assert.ok(props[key], `config property "${key}" is used but not declared`);
 }
 
 // registered-but-undeclared commands are only allowed for known internal ones
-const internalOK = new Set(['claude-teleport.itemMenu']);
+const internalOK = new Set(['entangle.itemMenu']);
 for (const id of registered) {
   if (!declared.has(id)) {
     assert.ok(internalOK.has(id), `command "${id}" is registered but not declared (and not a known internal)`);

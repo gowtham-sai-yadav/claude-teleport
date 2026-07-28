@@ -12,9 +12,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/bundle"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/claudedir"
-	"github.com/gowtham-sai-yadav/claude-teleport/internal/manifest"
+	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
+	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
+	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
 )
 
 type Options struct {
@@ -53,7 +53,7 @@ func Run(opts Options) (Result, error) {
 
 	out := opts.Out
 	if out == "" {
-		out = fmt.Sprintf("claude-teleport-backup-%s.tgz", time.Now().Format("20060102-150405"))
+		out = fmt.Sprintf("entangle-backup-%s.tgz", time.Now().Format("20060102-150405"))
 	}
 
 	man := manifest.Manifest{
