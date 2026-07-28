@@ -57,6 +57,11 @@ checksum:
 # `brew install gowtham-sai-yadav/tap/entangle` (no --cask).
 brews:
   - name: entangle
+    # Only the current-name archive. Both archives carry the same binaries for
+    # the same OS/arch pairs, and a formula can install exactly one per pair -
+    # without this, GoReleaser cannot tell which and fails the whole release.
+    # Homebrew users are always installing fresh, so they get the current name.
+    ids: [raw]
     repository:
       owner: gowtham-sai-yadav
       name: homebrew-tap
