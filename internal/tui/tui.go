@@ -320,44 +320,17 @@ func (m model) Init() tea.Cmd {
 
 // loadSessions gathers sessions from every coding tool installed on this machine.
 //
-// One tool failing is not allowed to blank the list: a broken or half-installed
-// tool would otherwise hide everything else, which is the worst possible failure
-// for a screen whose whole job is showing you your work.
+// The sweep itself lives in agent.Scan because `entangle gui` shows the same list
+// in a browser, and two copies of that loop would drift apart.
 func loadSessions(configDir string) tea.Cmd {
 	return func() tea.Msg {
-		var (
-			sessions []agent.Session
-			roots    = map[agent.ID]agent.Roots{}
-			present  []agent.ID
-			problems []string
-		)
-		for _, p := range agent.All() {
-			// --config-dir has always meant the Claude directory, so it is only
-			// passed there; for another tool it would name something unrelated.
-			override := ""
-			if p.ID() == agent.ClaudeCode {
-				override = configDir
-			}
-			r, installed, err := p.Locate(override)
-			if err != nil || !installed {
-				continue
-			}
-			got, err := p.ListSessions(r)
-			if err != nil {
-				problems = append(problems, p.DisplayName()+": "+err.Error())
-				continue
-			}
-			roots[p.ID()] = r
-			present = append(present, p.ID())
-			sessions = append(sessions, got...)
+		inv := agent.Scan(configDir)
+		return sessionsMsg{
+			sessions: inv.Sessions,
+			present:  inv.Present,
+			roots:    inv.Roots,
+			problems: inv.Problems,
 		}
-		agent.SortSessions(sessions)
-		// Each provider derived its handles from its own sessions alone, so two
-		// tools can offer the same one. Redo them over the joined list: the handle
-		// on screen is what a user reads out or pastes into the CLI.
-		agent.AssignShortIDs(sessions, agent.ShortIDMin)
-
-		return sessionsMsg{sessions: sessions, present: present, roots: roots, problems: problems}
 	}
 }
 

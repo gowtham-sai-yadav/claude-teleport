@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     fill="none" role="img" aria-label="entangle">
+  <!--
+    A session crossing a portal: trail on the left, the ring, and the session
+    itself sitting astride the ring's edge on its way out.
+
+    The one thing to not undo: the session must break the ring, not sit inside
+    it. A shape centred inside a ring reads as an iris - the first version of this
+    was unmistakably an eye, which is the wrong thing entirely for a tool that
+    moves your work around. The gap is what turns "looking" into "passing
+    through", and it is also what keeps the two forms legible in a single colour,
+    since touching shapes in one colour merge into a blob.
+
+    Everything is currentColor. Set it to coral (#ff5a36) on the site, let it
+    inherit in a README, make it solid black for a sticker - no second file.
+
+    Symmetric about y=32, because this also has to sit centred in a rounded-square
+    app icon. Nothing load-bearing is thinner than the ring stroke; the trail is
+    allowed to vanish when small, and logo-mark.svg is the variant that drops it
+    on purpose.
+  -->
+  <defs>
+    <mask id="portal-gap">
+      <rect width="64" height="64" fill="#fff"/>
+      <!-- punches clearance around the session so the ring does not touch it -->
+      <circle cx="47" cy="32" r="11" fill="#000"/>
+    </mask>
+  </defs>
+  <g mask="url(#portal-gap)" stroke="currentColor" stroke-linecap="round">
+    <!-- the trail: three bars, mirrored across the centre, fading outward. The
+         middle one runs long and crosses into the ring - that overlap is the
+         other half of selling "through". -->
+    <g stroke-width="3">
+      <path d="M4 32h26"/>
+      <path d="M8 23h13" opacity=".55"/>
+      <path d="M8 41h13" opacity=".55"/>
+    </g>
+    <ellipse cx="36" cy="32" rx="15" ry="25" stroke-width="6"/>
+  </g>
+  <!-- the session, astride the ring's edge and on its way out -->
+  <rect x="41" y="26" width="12" height="12" rx="3" fill="currentColor"/>
+</svg>
