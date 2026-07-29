@@ -36,6 +36,11 @@ a Codex session to Codex, an opencode session to opencode - listed together, sha
 same way. (Opening one tool's session *inside another* is a different problem, and not
 one this solves yet.)
 
+Two scopes, and it matters which you need. **Sharing one session covers all three tools.**
+**Packing a whole machine covers Claude Code only so far** - move a Codex or opencode
+session with `entangle share` instead. `entangle export` tells you what it left out rather
+than letting you discover it on the new laptop.
+
 It is private by construction. Nothing is uploaded, there is no account and no server in
 the middle; a direct transfer is end-to-end encrypted, likely secrets are scrubbed before
 anything leaves your machine, and your login never travels at all. The one exception is an
@@ -175,6 +180,14 @@ entangle import entangle-backup-*.tgz
 
 It shows you every project and where it will land, asks you to confirm, fixes the paths, and checks your sessions are resume-ready. Add `--dry-run` to preview without writing anything, and `--map /old/path=/new/path` if it guesses a location wrong.
 
+### Or import by clicking
+
+```bash
+entangle gui
+```
+
+does the same restore in a browser: point it at a bundle, see every project as a *from → to* row, untick what you do not want, and nothing is written until you confirm. Add a bundle path to skip straight to the review, or `--port N` to pin the port. It serves on `127.0.0.1` only and needs no network.
+
 Then open a project and carry on:
 
 ```bash
@@ -183,14 +196,6 @@ claude --resume
 ```
 
 > Your login does not transfer, on purpose. Credentials are locked to each machine, so just sign in once on the new one.
-
-## Prefer clicking?
-
-```bash
-entangle gui
-```
-
-opens a small wizard in your browser to pick a bundle and import it. Everything stays on your machine.
 
 ## In your editor
 
