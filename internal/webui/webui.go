@@ -1,7 +1,12 @@
-// Package webui serves a small point-and-click import wizard on localhost.
-// It is built entirely on the standard library (no external dependencies), so
-// it ships inside the single binary. `entangle gui` starts it and opens
-// the browser; the page talks to the same importer code the CLI uses.
+// Package webui serves entangle's browser UI on localhost: the list of every
+// coding session on this machine, and a point-and-click wizard for restoring a
+// whole-machine export onto it.
+//
+// Built entirely on the standard library, with the page embedded, so it ships
+// inside the single binary and works with no network at all. `entangle gui`
+// starts it and opens the browser; the page calls the same agent and importer
+// code the CLI and the cockpit use, so the three cannot disagree about what is
+// on disk.
 package webui
 
 import (
@@ -13,6 +18,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"time"
 
 	"github.com/gowtham-sai-yadav/entangle/internal/agent"
 	"github.com/gowtham-sai-yadav/entangle/internal/agentshare"
@@ -54,9 +60,12 @@ func checkBundleKind(bundlePath string) error {
 //go:embed index.html
 var assets embed.FS
 
-// Serve starts the wizard on 127.0.0.1:<port> (port 0 picks a free one),
-// opens the browser, and blocks until interrupted.
-func Serve(port int, bundle string) error {
+// Serve starts the GUI on 127.0.0.1:<port> (port 0 picks a free one), opens the
+// browser, and blocks until interrupted.
+//
+// version is shown in the masthead. It is passed in rather than read here because
+// it is stamped at build time and only the cli package knows it.
+func Serve(port int, bundle, version string) error {
 	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
 	if err != nil {
 		return err
@@ -65,7 +74,8 @@ func Serve(port int, bundle string) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", serveIndex)
-	mux.HandleFunc("/api/env", envHandler(bundle))
+	mux.HandleFunc("/api/env", envHandler(bundle, version))
+	mux.HandleFunc("/api/sessions", sessionsHandler)
 	mux.HandleFunc("/api/plan", planHandler)
 	mux.HandleFunc("/api/import", importHandler)
 
@@ -89,7 +99,7 @@ func serveIndex(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(b)
 }
 
-func envHandler(bundle string) http.HandlerFunc {
+func envHandler(bundle, version string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tp, err := claudedir.Locate("")
 		home := ""
@@ -97,11 +107,62 @@ func envHandler(bundle string) http.HandlerFunc {
 			home = tp.Home
 		}
 		writeJSON(w, map[string]any{
-			"home":   home,
-			"os":     runtime.GOOS,
-			"bundle": bundle,
+			"home":    home,
+			"os":      runtime.GOOS,
+			"bundle":  bundle,
+			"version": version,
 		})
 	}
+}
+
+// sessionRow is the wire shape of one session, declared here rather than
+// marshalling agent.Session directly.
+//
+// agent.Session carries a Ref, which is a provider-private handle to open files
+// and internal state - documented as opaque and never serialised. Encoding the
+// struct as-is would either fail on it or publish it to a browser. A hand-written
+// row also keeps this page's contract independent of a struct that changes
+// whenever a new tool is added.
+type sessionRow struct {
+	Tool     string `json:"tool"`
+	ShortID  string `json:"shortId"`
+	Title    string `json:"title"`
+	Project  string `json:"project"`
+	Messages int    `json:"messages"`
+	Modified string `json:"modified"` // RFC3339; the browser knows the local zone
+	Bytes    int64  `json:"bytes"`
+}
+
+// sessionsHandler lists what is on this machine, across every tool.
+//
+// The wizard used to be the whole page, which made the GUI a thing you opened
+// once while moving laptops. The list is what makes it somewhere you can look at
+// your work, and it is the same sweep the cockpit runs.
+func sessionsHandler(w http.ResponseWriter, r *http.Request) {
+	inv := agent.Scan("")
+	rows := make([]sessionRow, 0, len(inv.Sessions))
+	for _, s := range inv.Sessions {
+		rows = append(rows, sessionRow{
+			Tool:     string(s.Provider),
+			ShortID:  s.ShortID,
+			Title:    s.Title,
+			Project:  s.ProjectPath,
+			Messages: s.Messages,
+			Modified: s.ModTime.Format(time.RFC3339),
+			Bytes:    s.Size,
+		})
+	}
+	tools := make([]string, 0, len(inv.Present))
+	for _, id := range inv.Present {
+		tools = append(tools, string(id))
+	}
+	// Problems ride along instead of becoming an error: one tool failing must not
+	// blank a list that still has everything else in it.
+	writeJSON(w, map[string]any{
+		"sessions": rows,
+		"tools":    tools,
+		"problems": inv.Problems,
+	})
 }
 
 type planReq struct {

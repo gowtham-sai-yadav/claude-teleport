@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     fill="none" role="img" aria-label="entangle">
+  <!--
+    The small-size variant: portal and session, no trail.
+
+    Not a lazier logo.svg - a different drawing for a different constraint. At 16
+    or 20 pixels the trail bars land under one device pixel, so they do not thin
+    out gracefully, they alias into grey fuzz around the ring and make the whole
+    mark look smudged. Dropping them lets the ring grow to fill the frame, which
+    is what keeps the silhouette crisp.
+
+    The ring still breaks for the session, for the same reason as in logo.svg: a
+    shape centred inside a ring is an eye, and the gap is what stops it being one.
+
+    Use this for the favicon, the macOS menu bar, a Windows tray icon, and the
+    VS Code activity bar. Use logo.svg above roughly 48px.
+  -->
+  <defs>
+    <mask id="mark-gap">
+      <rect width="64" height="64" fill="#fff"/>
+      <circle cx="47" cy="32" r="12" fill="#000"/>
+    </mask>
+  </defs>
+  <ellipse cx="31" cy="32" rx="18" ry="27" mask="url(#mark-gap)"
+           stroke="currentColor" stroke-width="7"/>
+  <rect x="40" y="24" width="16" height="16" rx="4" fill="currentColor"/>
+</svg>

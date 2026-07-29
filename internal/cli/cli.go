@@ -1126,7 +1126,7 @@ func runGUI(args []string) error {
 	if len(pos) > 0 {
 		bundlePath = pos[0]
 	}
-	return webui.Serve(*port, bundlePath)
+	return webui.Serve(*port, bundlePath, Version())
 }
 
 // runTUI launches the full-screen interactive cockpit, wiring in the same
