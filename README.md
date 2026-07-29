@@ -127,6 +127,20 @@ entangle send <id>
 
 You read out the short code it prints; they run `entangle receive <code>` from their copy of the project. The transfer is end-to-end encrypted, so no server can read it.
 
+If they do not have entangle, you do not have to talk them through installing it. Both `send` and the cockpit's `c` key give you a message that is ready to paste into chat, with the install line and the receive command already in it:
+
+```text
+Run these from inside your copy of the project
+(skip the first line if you already have entangle):
+
+  curl -fsSL https://gowthamsai.in/install.sh | sh
+  entangle receive 6-pioneer-village
+
+Windows PowerShell: irm https://gowthamsai.in/install.ps1 | iex
+```
+
+Received sessions attach to the directory they are run in, and every file path in the conversation is rewritten to match. That is why it says to run it from inside their copy of the project — from the wrong folder it still imports, but the paths in it point at files that are not there.
+
 <p align="center">
   <img src="docs/tui-send.png" alt="the hand-off preview: session, project, message count, and confirmation that secrets are scrubbed before it streams over an encrypted connection" width="720">
 </p>

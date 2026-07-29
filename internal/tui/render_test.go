@@ -210,13 +210,13 @@ func TestSendViewOffersCopyOnlyWithACode(t *testing.T) {
 	if plain(m.sendView()) == "" {
 		t.Fatal("empty send view")
 	}
-	if strings.Contains(plain(m.sendView()), "copy code") {
+	if strings.Contains(plain(m.sendView()), "copy invite") {
 		t.Error("no code yet, so nothing to copy - the hint should be absent")
 	}
 
 	m.code = "7-crossover-marbles"
 	withCode := plain(m.sendView())
-	if !strings.Contains(withCode, "copy code") {
+	if !strings.Contains(withCode, "copy invite") {
 		t.Errorf("with a code present the copy hint should appear:\n%s", withCode)
 	}
 	if !strings.Contains(withCode, "press c to copy") {
