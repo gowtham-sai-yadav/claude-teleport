@@ -278,6 +278,15 @@ func Resolve(id ID, override string) (Bound, error) {
 	return Bound{Provider: p, Roots: r}, nil
 }
 
+// ShortIDMin is the narrowest handle a listing shows. Claude Code sessions have
+// always displayed at eight characters, so starting every tool there keeps a
+// mixed list visually even, and prefixes grow only where ids actually collide.
+//
+// Anything merging sessions from more than one tool must re-run AssignShortIDs
+// over the combined slice: each provider only sees its own sessions, so handles
+// that are unique per tool can still collide once the lists are joined.
+const ShortIDMin = 8
+
 // AssignShortIDs sets each ShortID to the shortest prefix of ID that is unique
 // within s, never shorter than min. This is the treatment git gives commit
 // hashes, and it is necessary for any tool whose ids are time-ordered: Codex uses
@@ -290,20 +299,20 @@ func AssignShortIDs(s []Session, min int) {
 	if min < 1 {
 		min = 1
 	}
-	// Longest id bounds how far a prefix could ever need to grow.
-	longest := 0
-	for _, x := range s {
-		if len(x.ID) > longest {
-			longest = len(x.ID)
-		}
-	}
 	for i := range s {
 		n := min
-		for n < len(s[i].ID) && !uniquePrefix(s, i, n) {
-			n++
-		}
 		if n > len(s[i].ID) {
 			n = len(s[i].ID)
+		}
+		// Grow only while growing helps. Tools do reuse an id across projects - a
+		// Claude session copied into a second folder keeps its uuid - and for those
+		// no prefix is ever unique, so lengthening to the full id buys nothing and
+		// costs a listing its whole column width. Leave those at the short handle and
+		// let --project separate them.
+		if uniquePrefix(s, i, len(s[i].ID)) {
+			for n < len(s[i].ID) && !uniquePrefix(s, i, n) {
+				n++
+			}
 		}
 		s[i].ShortID = s[i].ID[:n]
 	}

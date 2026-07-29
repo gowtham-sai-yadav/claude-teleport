@@ -14,10 +14,42 @@ import (
 	"runtime"
 	"strconv"
 
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
+	"github.com/gowtham-sai-yadav/entangle/internal/agentshare"
 	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
 	"github.com/gowtham-sai-yadav/entangle/internal/importer"
 	"github.com/gowtham-sai-yadav/entangle/internal/paths"
 )
+
+// errForeignBundle explains, rather than showing an empty wizard, why a bundle
+// this page cannot handle produced no projects.
+//
+// The wizard's whole job is choosing which projects of a whole-machine Claude
+// export to restore where. A single session from another agent has no projects to
+// pick and attaches to one directory instead, so there is nothing here to click -
+// point the user at the one command that does it.
+func errForeignBundle(name string) error {
+	return fmt.Errorf("this bundle holds one %s session, and this wizard restores whole Claude Code exports.\n"+
+		"Import it from a terminal instead, standing in the project folder it should attach to:\n"+
+		"    entangle import <bundle>", name)
+}
+
+// checkBundleKind reports a foreign single-session bundle before any planning
+// work, so both API handlers fail the same way.
+func checkBundleKind(bundlePath string) error {
+	id, foreign, err := agentshare.PeekAgent(bundlePath)
+	if err != nil {
+		return err
+	}
+	if foreign {
+		name := string(id)
+		if p, ok := agent.Get(id); ok {
+			name = p.DisplayName()
+		}
+		return errForeignBundle(name)
+	}
+	return nil
+}
 
 //go:embed index.html
 var assets embed.FS
@@ -92,6 +124,10 @@ func planHandler(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if err := checkBundleKind(req.Bundle); err != nil {
+		writeErr(w, err)
+		return
+	}
 	man, err := importer.LoadManifest(req.Bundle)
 	if err != nil {
 		writeErr(w, err)
@@ -114,6 +150,10 @@ func planHandler(w http.ResponseWriter, r *http.Request) {
 func importHandler(w http.ResponseWriter, r *http.Request) {
 	var req importReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if err := checkBundleKind(req.Bundle); err != nil {
 		writeErr(w, err)
 		return
 	}

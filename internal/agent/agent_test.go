@@ -163,3 +163,79 @@ func reset() {
 	defer mu.Unlock()
 	providers = map[ID]Provider{}
 }
+
+// TestShortIDsGrowOnlyUntilUnique: the handle is what a user copies out of a
+// listing and types back, so it has to identify one session - but no longer than
+// it takes to do that.
+func TestShortIDsGrowOnlyUntilUnique(t *testing.T) {
+	// UUIDv7 ids, whose leading characters encode the timestamp: two sessions
+	// started seconds apart share a long prefix, which is exactly the case a
+	// fixed-width handle gets wrong.
+	s := []Session{
+		{ID: "019fa4443f2a7c1b8d01"},
+		{ID: "019fa4443f2a7c1b8d99"},
+		{ID: "8e3d21d1-aa11-4f00"},
+	}
+	AssignShortIDs(s, ShortIDMin)
+
+	if s[0].ShortID == s[1].ShortID {
+		t.Fatalf("time-ordered ids collided: both are %q", s[0].ShortID)
+	}
+	for i, x := range s {
+		if !strings.HasPrefix(x.ID, x.ShortID) {
+			t.Errorf("session %d: handle %q is not a prefix of id %q, so pasting it back would not match", i, x.ShortID, x.ID)
+		}
+	}
+	if got := len(s[2].ShortID); got != ShortIDMin {
+		t.Errorf("an id that needs no extra characters got %d of them, want %d", got, ShortIDMin)
+	}
+}
+
+// TestShortIDsStayShortWhenTheFullIDIsAmbiguous: a session copied into a second
+// project keeps its id, so no prefix can ever separate the two. Growing to the
+// full 36-character uuid disambiguates nothing and widens every listing that
+// contains it, so the handle must stay short and let --project decide.
+func TestShortIDsStayShortWhenTheFullIDIsAmbiguous(t *testing.T) {
+	dup := "9a16a391-a0d3-4eba-b71e-56c38c253c51"
+	s := []Session{
+		{ID: dup, ProjectPath: "/w/one"},
+		{ID: dup, ProjectPath: "/w/two"},
+		{ID: "1f9c77a2-bb22-4e11-8d1a-defdefdefdef"},
+	}
+	AssignShortIDs(s, ShortIDMin)
+
+	for i := 0; i < 2; i++ {
+		if got := len(s[i].ShortID); got != ShortIDMin {
+			t.Errorf("duplicate id %d has a %d-character handle, want %d - lengthening it cannot disambiguate", i, got, ShortIDMin)
+		}
+	}
+}
+
+// TestShortIDsMustBeReassignedAcrossTools: each provider numbers its own sessions
+// in isolation, so anything merging two lists has to redo the handles. Without it
+// a listing shows one handle for two different sessions.
+func TestShortIDsMustBeReassignedAcrossTools(t *testing.T) {
+	claude := []Session{{Provider: ClaudeCode, ID: "abcdef1234-claude"}}
+	other := []Session{{Provider: Codex, ID: "abcdef1234-codex"}}
+	AssignShortIDs(claude, ShortIDMin)
+	AssignShortIDs(other, ShortIDMin)
+	if claude[0].ShortID != other[0].ShortID {
+		t.Skip("ids no longer share a prefix; the merge hazard this guards is gone")
+	}
+
+	merged := append(append([]Session{}, claude...), other...)
+	AssignShortIDs(merged, ShortIDMin)
+	if merged[0].ShortID == merged[1].ShortID {
+		t.Errorf("after merging, two sessions still share the handle %q", merged[0].ShortID)
+	}
+}
+
+// TestShortIDsHandleAnIDShorterThanTheMinimum: a provider is free to use short
+// ids, and asking for eight characters of a five-character id must not panic.
+func TestShortIDsHandleAnIDShorterThanTheMinimum(t *testing.T) {
+	s := []Session{{ID: "ab12"}, {ID: "cd34"}}
+	AssignShortIDs(s, ShortIDMin)
+	if s[0].ShortID != "ab12" || s[1].ShortID != "cd34" {
+		t.Errorf("short ids were mangled: %q, %q", s[0].ShortID, s[1].ShortID)
+	}
+}

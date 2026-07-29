@@ -135,10 +135,20 @@ type model struct {
 	// session list loads. configDir is the --config-dir override, which has always
 	// meant the Claude directory.
 	roots     map[agent.ID]agent.Roots
-	tools     int // how many tools were found, decides whether rows show a tool name
 	configDir string
 	version   string
 	tcfg      transfer.Config
+
+	// The full listing is kept so the tool filter can be changed without going
+	// back to disk: re-reading would cost a visible pause on every press of `t`,
+	// and would let the list shift under the cursor between views.
+	//
+	// present is the tools actually found here, in registry order. It doubles as
+	// the cycle order for `t` and as the answer to "is more than one tool in play",
+	// which decides whether rows carry a tool name at all.
+	allSessions []agent.Session
+	present     []agent.ID
+	filter      agent.ID // "" means every tool
 
 	banner   string // pre-rendered ascii wordmark
 	bannerOK bool   // banner fits the current width
@@ -178,9 +188,9 @@ type model struct {
 // ---- messages -------------------------------------------------------------
 
 type sessionsMsg struct {
-	items    []list.Item
+	sessions []agent.Session
+	present  []agent.ID
 	roots    map[agent.ID]agent.Roots
-	tools    int
 	problems []string
 	err      error
 }
@@ -284,7 +294,7 @@ func loadSessions(configDir string) tea.Cmd {
 		var (
 			sessions []agent.Session
 			roots    = map[agent.ID]agent.Roots{}
-			tools    int
+			present  []agent.ID
 			problems []string
 		)
 		for _, p := range agent.All() {
@@ -294,8 +304,8 @@ func loadSessions(configDir string) tea.Cmd {
 			if p.ID() == agent.ClaudeCode {
 				override = configDir
 			}
-			r, present, err := p.Locate(override)
-			if err != nil || !present {
+			r, installed, err := p.Locate(override)
+			if err != nil || !installed {
 				continue
 			}
 			got, err := p.ListSessions(r)
@@ -303,17 +313,17 @@ func loadSessions(configDir string) tea.Cmd {
 				problems = append(problems, p.DisplayName()+": "+err.Error())
 				continue
 			}
-			tools++
 			roots[p.ID()] = r
+			present = append(present, p.ID())
 			sessions = append(sessions, got...)
 		}
 		agent.SortSessions(sessions)
+		// Each provider derived its handles from its own sessions alone, so two
+		// tools can offer the same one. Redo them over the joined list: the handle
+		// on screen is what a user reads out or pastes into the CLI.
+		agent.AssignShortIDs(sessions, agent.ShortIDMin)
 
-		items := make([]list.Item, 0, len(sessions))
-		for _, s := range sessions {
-			items = append(items, sessionItem{s: s, showTool: tools > 1})
-		}
-		return sessionsMsg{items: items, roots: roots, tools: tools, problems: problems}
+		return sessionsMsg{sessions: sessions, present: present, roots: roots, problems: problems}
 	}
 }
 
@@ -665,8 +675,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loadErr = msg.err
 			return m, nil
 		}
-		m.roots, m.tools = msg.roots, msg.tools
-		m.list.SetItems(msg.items)
+		m.roots, m.present, m.allSessions = msg.roots, msg.present, msg.sessions
+		m.rebuildList()
 		if len(msg.problems) > 0 {
 			// Say which tool could not be read rather than quietly showing a short
 			// list the user has no way to question.
@@ -770,6 +780,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(checkUpdate(m.version), m.spinner.Tick)
 		case "c":
 			m.withContext = !m.withContext
+			return m, nil
+		case "t":
+			m.cycleTool()
+			m.layout() // the header line may have grown or shrunk
 			return m, nil
 		case "?":
 			m.mode = modeHelp
@@ -885,6 +899,64 @@ func (m model) selected() (sessionItem, bool) {
 	return it, ok
 }
 
+// rebuildList refills the list from allSessions, honouring the current tool
+// filter. The list is rebuilt rather than hidden row by row so that the count in
+// the title, the scrollbar, and the built-in `/` search all agree with what is on
+// screen.
+func (m *model) rebuildList() {
+	items := make([]list.Item, 0, len(m.allSessions))
+	for _, s := range m.allSessions {
+		if m.filter != "" && s.Provider != m.filter {
+			continue
+		}
+		// Naming the tool is only useful when the row could have come from more than
+		// one: filtered to a single tool, the header already says which, and someone
+		// who only has Claude Code sees exactly the row they always saw.
+		items = append(items, sessionItem{s: s, showTool: len(m.present) > 1 && m.filter == ""})
+	}
+	m.list.SetItems(items)
+	// Rows changed height and count, so an old cursor position can land past the
+	// end. Start at the newest session, which is what the user came for anyway.
+	m.list.Select(0)
+}
+
+// cycleTool advances the filter one step: all tools, then each installed tool in
+// turn, then back to all. Cycling beats a picker here because there are only ever
+// a handful of tools and the whole point is a glance at another one and back.
+func (m *model) cycleTool() {
+	if len(m.present) < 2 {
+		return // nothing to cycle between
+	}
+	if m.filter == "" {
+		m.filter = m.present[0]
+	} else {
+		at := len(m.present) // not found -> fall back to "all"
+		for i, id := range m.present {
+			if id == m.filter {
+				at = i
+				break
+			}
+		}
+		if at+1 < len(m.present) {
+			m.filter = m.present[at+1]
+		} else {
+			m.filter = ""
+		}
+	}
+	m.rebuildList()
+}
+
+// filterLabel names the active filter for the header and the key hint.
+func (m model) filterLabel() string {
+	if m.filter == "" {
+		return "all tools"
+	}
+	if p, ok := agent.Get(m.filter); ok {
+		return p.DisplayName()
+	}
+	return string(m.filter)
+}
+
 func (m *model) startInput(md mode) model {
 	m.mode = md
 	m.input.SetValue("")
@@ -978,7 +1050,9 @@ func (m model) helpView() string {
 	kcol := lipgloss.NewStyle().Foreground(signal).Width(6)
 	row := func(k, d string) string { return "  " + kcol.Render(k) + dimStyle.Render(d) }
 
-	body := lipgloss.JoinVertical(lipgloss.Left,
+	// Blank strings in this list are deliberate spacers, so a row that does not
+	// apply has to be left out rather than emptied - hence the appends.
+	rows := []string{
 		accentStyle.Bold(true).Render("What everything does"),
 		"",
 		head("Browse"),
@@ -986,6 +1060,15 @@ func (m model) helpView() string {
 		row("/", "search by title, project, id, or tool name"),
 		row("row", "tool · id · messages · last active · project"),
 		row("", "every coding agent found on this machine is listed"),
+	}
+	// The tool switch is only worth explaining when there is a second tool to
+	// switch to; on a one-tool machine it describes a distinction that does not
+	// exist here.
+	multi := len(m.present) > 1
+	if multi {
+		rows = append(rows, row("t", "show one tool at a time, or all together (now: "+m.filterLabel()+")"))
+	}
+	rows = append(rows,
 		"",
 		head("Hand a session to a teammate"),
 		row("↵", "send — stream it over an encrypted code, no file"),
@@ -994,6 +1077,14 @@ func (m model) helpView() string {
 		"",
 		head("Move your own history between machines"),
 		row("e", "export — pack every session into one backup file"),
+	)
+	// Same reasoning, and the same honesty the CLI applies: whole-machine backup
+	// reads the Claude Code layout only, so say so wherever several tools are in
+	// play rather than letting it be discovered on the new machine.
+	if multi {
+		rows = append(rows, row("", "backup covers Claude Code only; use s or ↵ for the rest"))
+	}
+	rows = append(rows,
 		row("i", "import — restore a backup or shared file here"),
 		"",
 		head("Other"),
@@ -1006,7 +1097,7 @@ func (m model) helpView() string {
 		"",
 		keyHint("any key", "back"),
 	)
-	return cardStyle.Render(body)
+	return cardStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
 func (m model) headerView() string {
@@ -1022,6 +1113,12 @@ func (m model) headerView() string {
 	b.WriteString(accentStyle.Render("private by construction") + dimStyle.Render(" · everything runs on this machine"))
 	b.WriteString("\n")
 	b.WriteString(mutedStyle.Render(fmt.Sprintf("entangle v%s", m.version)))
+	// Which tools the list covers, but only once there is more than one to cover:
+	// on a machine with just Claude Code the distinction does not exist, and saying
+	// it anyway would imply something is being hidden.
+	if len(m.present) > 1 {
+		b.WriteString(mutedStyle.Render(" · showing ") + accentStyle.Render(m.filterLabel()))
+	}
 	b.WriteString("\n")
 	return b.String()
 }
@@ -1035,10 +1132,14 @@ func (m model) footerView() string {
 		keyHint("↵", "send"), keyHint("s", "share to file"), keyHint("r", "receive"),
 		keyHint("e", "export"), keyHint("i", "import"), keyHint("u", "update"),
 	}, dimStyle.Render("   "))
-	line2 := strings.Join([]string{
-		keyHint("/", "search"), keyHint("c", "context: "+ctx),
-		keyHint("?", "help"), keyHint("↑↓", "move"), keyHint("q", "quit"),
-	}, dimStyle.Render("   "))
+	hints := []string{keyHint("/", "search"), keyHint("c", "context: "+ctx)}
+	// The tool switch is only offered when there is a second tool to switch to.
+	if len(m.present) > 1 {
+		hints = append(hints, keyHint("t", "tool: "+m.filterLabel()))
+	}
+	hints = append(hints,
+		keyHint("?", "help"), keyHint("↑↓", "move"), keyHint("q", "quit"))
+	line2 := strings.Join(hints, dimStyle.Render("   "))
 	rule := mutedStyle.Render(strings.Repeat("─", max(1, min(m.width, 80))))
 	return rule + "\n" + line1 + "\n" + line2
 }

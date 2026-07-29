@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gowtham-sai-yadav/entangle/internal/agent"
 )
 
 // writeSession drops a minimal transcript (one user line + N assistant lines)
@@ -105,5 +107,53 @@ func TestSessionsJSONProjectFilter(t *testing.T) {
 	}
 	if p, _ := got[0]["project"].(string); !strings.Contains(p, "web") {
 		t.Errorf("filtered session has wrong project: %q", p)
+	}
+}
+
+// TestToolSelectionKeepsConfigDirWorking: --config-dir has only ever named the
+// Claude Code directory. Now that commands default to every tool, an unset --tool
+// beside a --config-dir has to still mean Claude Code, or every script and CI job
+// that passes one starts failing.
+func TestToolSelectionKeepsConfigDirWorking(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		tool      string
+		configDir string
+		want      string
+	}{
+		{"nothing given lists every tool", "", "", toolAll},
+		{"a config dir alone means Claude Code", "", "/tmp/x", string(agent.ClaudeCode)},
+		{"an explicit tool is obeyed", "codex", "", "codex"},
+		{"an explicit tool wins beside a config dir", "codex", "/tmp/x", "codex"},
+		{"asking for all is not silently narrowed", toolAll, "", toolAll},
+	} {
+		if got := toolSelection(c.tool, c.configDir); got != c.want {
+			t.Errorf("%s: toolSelection(%q, %q) = %q, want %q", c.name, c.tool, c.configDir, got, c.want)
+		}
+	}
+}
+
+// TestConfigDirWithAllToolsIsRefused: naming both is a contradiction - one
+// directory cannot be the override for three tools - so it must be reported rather
+// than quietly applied to one of them.
+func TestConfigDirWithAllToolsIsRefused(t *testing.T) {
+	_, _, err := listFor(toolAll, t.TempDir())
+	if err == nil {
+		t.Fatal("--config-dir with --tool all was accepted; it has no coherent meaning")
+	}
+	if !strings.Contains(err.Error(), "--tool") {
+		t.Errorf("the error should say what to do instead, got: %v", err)
+	}
+}
+
+// TestVerifyRejectsAFileArgument: `verify bundle.tgz` used to ignore the file and
+// report on the local install instead, which reads as the bundle passing.
+func TestVerifyRejectsAFileArgument(t *testing.T) {
+	err := Run([]string{"verify", "some-bundle.tgz"})
+	if err == nil {
+		t.Fatal("verify accepted a file argument and reported on something else")
+	}
+	if !strings.Contains(err.Error(), "inspect") {
+		t.Errorf("the error should point at the command that does read a bundle, got: %v", err)
 	}
 }
