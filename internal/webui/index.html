@@ -233,26 +233,20 @@
     <span class="ver mono" id="ver"></span>
   </div>
   <p class="tagline">
-    Every coding session on this machine, in one list — <b>Claude Code, Codex and
-    opencode together</b> — and a way to bring a whole history onto a new laptop.
+    <b>Bring a whole Claude Code history onto this laptop</b> — pick the projects,
+    fix the paths, see what changes before anything is written. Every session
+    already here is listed underneath.
   </p>
 </header>
 
 <main>
 
-  <!-- ---- what is on this machine ---------------------------------------- -->
-  <section id="listPanel">
-    <div class="head">
-      <h2>On this machine</h2>
-      <span class="why" id="listCount"></span>
-      <div class="chips" id="chips"></div>
-    </div>
-    <div id="listProblems" class="hidden" style="padding:0 20px 16px"></div>
-    <ul class="sessions" id="list"></ul>
-    <div class="empty hidden" id="listEmpty"></div>
-  </section>
+  <!-- ---- the import wizard ----------------------------------------------
+       First, because it is the only thing on this page you can act on. The
+       session list below is read-only: you cannot send, resume or delete from
+       a browser, so leading with it made the page look like a dashboard and
+       buried the one job it actually does. -->
 
-  <!-- ---- the import wizard ---------------------------------------------- -->
   <section>
     <div class="head">
       <h2>Bring a history onto this machine</h2>
@@ -325,6 +319,20 @@
         log in once, then run <code>claude --resume</code> inside a project.
       </div>
     </div>
+  </section>
+
+  <!-- ---- what is already on this machine ---------------------------------
+       Reference, not the main event: confirmation that an import landed, and a
+       way to find a session's short id to type at a terminal. -->
+  <section id="listPanel">
+    <div class="head">
+      <h2>Already on this machine</h2>
+      <span class="why" id="listCount"></span>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div id="listProblems" class="hidden" style="padding:0 20px 16px"></div>
+    <ul class="sessions" id="list"></ul>
+    <div class="empty hidden" id="listEmpty"></div>
   </section>
 
 </main>
