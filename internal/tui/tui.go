@@ -139,6 +139,11 @@ type model struct {
 	version   string
 	tcfg      transfer.Config
 
+	// newVersion is a newer release the update check already found, or "". It sits
+	// in the header rather than in notice, because notice is cleared whenever an
+	// operation starts and this is true for the whole session.
+	newVersion string
+
 	// The full listing is kept so the tool filter can be changed without going
 	// back to disk: re-reading would cost a visible pause on every press of `t`,
 	// and would let the list shift under the cursor between views.
@@ -230,14 +235,18 @@ type updateAvailMsg struct {
 
 // Run launches the interactive cockpit. configDir mirrors the --config-dir flag
 // the other commands accept; "" means the default (~/.claude).
-func Run(configDir string, tcfg transfer.Config, version string) error {
-	m := newModel(configDir, tcfg, version)
+//
+// newVersion is a newer release already found by the update check, or "". It is
+// passed in rather than looked up here so the cockpit never makes a network
+// request of its own: the answer is whatever the last run cached.
+func Run(configDir string, tcfg transfer.Config, version, newVersion string) error {
+	m := newModel(configDir, tcfg, version, newVersion)
 	prog := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := prog.Run()
 	return err
 }
 
-func newModel(configDir string, tcfg transfer.Config, version string) model {
+func newModel(configDir string, tcfg transfer.Config, version, newVersion string) model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = accentStyle
@@ -265,16 +274,17 @@ func newModel(configDir string, tcfg transfer.Config, version string) model {
 	l.FilterInput.PromptStyle = accentStyle
 
 	return model{
-		mode:      modeList,
-		configDir: configDir,
-		version:   version,
-		tcfg:      tcfg,
-		banner:    figure.NewFigure("entangle", "small", true).String(),
-		bannerOK:  true,
-		list:      l,
-		spinner:   sp,
-		progress:  pr,
-		input:     in,
+		mode:       modeList,
+		configDir:  configDir,
+		version:    version,
+		newVersion: newVersion,
+		tcfg:       tcfg,
+		banner:     figure.NewFigure("entangle", "small", true).String(),
+		bannerOK:   true,
+		list:       l,
+		spinner:    sp,
+		progress:   pr,
+		input:      in,
 	}
 }
 
@@ -1119,6 +1129,18 @@ func (m model) headerView() string {
 	if len(m.present) > 1 {
 		b.WriteString(mutedStyle.Render(" · showing ") + accentStyle.Render(m.filterLabel()))
 	}
+	// Someone who only ever types `entangle` lives in here, so this is the only
+	// place they would ever learn a new version exists. It says which command to
+	// run because the right one differs by how they installed it.
+	if m.newVersion != "" {
+		how := "press u"
+		if updater.ManagedByHomebrew() {
+			how = "brew upgrade entangle"
+		}
+		b.WriteString(mutedStyle.Render(" · ") +
+			warnStyle.Render("v"+m.newVersion+" available") +
+			mutedStyle.Render(" · "+how))
+	}
 	b.WriteString("\n")
 	return b.String()
 }
@@ -1253,17 +1275,30 @@ func (m model) inputView(title, prompt, hint string) string {
 }
 
 func (m model) updateView() string {
-	body := lipgloss.JoinVertical(lipgloss.Left,
+	rows := []string{
 		accentStyle.Bold(true).Render("An update is available"),
 		"",
 		row("installed", m.version),
 		row("latest", m.updLatest),
 		"",
 		dimStyle.Render("Downloads the signed release and verifies its checksum."),
+	}
+	// Installing in place inside a Homebrew keg works, and then leaves brew still
+	// convinced the old version is there - so a later `brew upgrade` can put an
+	// older build back over the top. Better said here than discovered later as a
+	// mysterious downgrade.
+	if updater.ManagedByHomebrew() {
+		rows = append(rows,
+			"",
+			warnStyle.Render("Homebrew installed this copy. Installing here confuses brew's"),
+			warnStyle.Render("records - quit and run `brew upgrade entangle` instead."),
+		)
+	}
+	rows = append(rows,
 		"",
 		keyHint("↵", "install")+"    "+keyHint("esc", "not now"),
 	)
-	return cardStyle.Render(body)
+	return cardStyle.Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
 
 func (m model) resultView() string {

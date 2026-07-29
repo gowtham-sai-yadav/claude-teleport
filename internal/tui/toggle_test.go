@@ -15,7 +15,7 @@ import (
 // only configuration where the tool filter means anything.
 func multiToolModel(t *testing.T) model {
 	t.Helper()
-	m := newModel("", transfer.Config{}, "0.6.0")
+	m := newModel("", transfer.Config{}, "0.6.0", "")
 	mm, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m = mm.(model)
 	now := time.Now()
