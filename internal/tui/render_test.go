@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -25,12 +24,12 @@ func fakeModel(t *testing.T, w, h int) model {
 	mm, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	m = mm.(model)
 	now := time.Now()
-	items := []list.Item{
-		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "8e3d21d1-aa11-4f00-9c0f-abc", ShortID: "8e3d21d1", ProjectPath: "/Users/gowtham/work/api-service", Title: "refactor the auth layer", Messages: 42, ModTime: now.Add(-2 * time.Hour)}},
-		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "1f9c77a2-bb22-4e11-8d1a-def", ShortID: "1f9c77a2", ProjectPath: "/Users/gowtham/side/entangle", Title: "build the interactive TUI", Messages: 128, ModTime: now.Add(-25 * time.Hour)}},
-		sessionItem{s: agent.Session{Provider: agent.ClaudeCode, ID: "44ab90ee-cc33-4d22-7e2b-ghi", ShortID: "44ab90ee", ProjectPath: "/Users/gowtham/work/dash", Title: "fix the flaky pagination test", Messages: 9, ModTime: now.Add(-9 * time.Minute)}},
+	sessions := []agent.Session{
+		{Provider: agent.ClaudeCode, ID: "8e3d21d1-aa11-4f00-9c0f-abc", ShortID: "8e3d21d1", ProjectPath: "/Users/gowtham/work/api-service", Title: "refactor the auth layer", Messages: 42, ModTime: now.Add(-2 * time.Hour)},
+		{Provider: agent.ClaudeCode, ID: "1f9c77a2-bb22-4e11-8d1a-def", ShortID: "1f9c77a2", ProjectPath: "/Users/gowtham/side/entangle", Title: "build the interactive TUI", Messages: 128, ModTime: now.Add(-25 * time.Hour)},
+		{Provider: agent.ClaudeCode, ID: "44ab90ee-cc33-4d22-7e2b-ghi", ShortID: "44ab90ee", ProjectPath: "/Users/gowtham/work/dash", Title: "fix the flaky pagination test", Messages: 9, ModTime: now.Add(-9 * time.Minute)},
 	}
-	mm, _ = m.Update(sessionsMsg{items: items, tools: 1})
+	mm, _ = m.Update(sessionsMsg{sessions: sessions, present: []agent.ID{agent.ClaudeCode}})
 	return mm.(model)
 }
 
@@ -194,7 +193,7 @@ func TestConfirmCardNamesTheTool(t *testing.T) {
 // showing a short list the user has no way to question.
 func TestLoadProblemsSurface(t *testing.T) {
 	m := fakeModel(t, 100, 40)
-	mm, _ := m.Update(sessionsMsg{items: nil, tools: 1, problems: []string{"opencode: no such table: session"}})
+	mm, _ := m.Update(sessionsMsg{present: []agent.ID{agent.ClaudeCode}, problems: []string{"opencode: no such table: session"}})
 	got := mm.(model)
 	if !strings.Contains(got.notice, "opencode") {
 		t.Errorf("a read failure should be surfaced, notice = %q", got.notice)

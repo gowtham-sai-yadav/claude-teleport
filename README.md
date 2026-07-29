@@ -227,9 +227,9 @@ entangle export   [--out FILE] [--config-dir DIR]
 entangle import   <bundle> [flags]
 entangle inspect  <bundle>
 entangle verify   [--config-dir DIR]
-entangle sessions [--tool claude-code|codex|opencode|all] [--project P] [--config-dir DIR] [--json]
-entangle share    <session-id | --last> [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]
-entangle send     <session-id | --last> [--project P] [--with-context] [--no-redact] [--rendezvous URL] [--relay HOST:PORT] [--yes]
+entangle sessions [--tool T] [--project P] [--config-dir DIR] [--json]
+entangle share    <session-id | --last> [--tool T] [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]
+entangle send     <session-id | --last> [--tool T] [--project P] [--with-context] [--no-redact] [--rendezvous URL] [--relay HOST:PORT] [--yes]
 entangle receive  <code> [--config-dir DIR] [--map OLD=NEW]... [--rendezvous URL] [--relay HOST:PORT] [--yes]
 entangle update   [--check] [--yes]
 entangle gui      [bundle] [--port N]
@@ -248,7 +248,9 @@ entangle gui      [bundle] [--port N]
 | `--deep` | Rewrite old paths everywhere in transcripts, not just the `cwd` field. |
 | `--yes` | Skip the confirmation prompt. |
 
-`inspect` shows what is inside a bundle. `verify` checks the sessions already on this machine are resume-ready. `send`/`receive` use the public magic-wormhole servers by default; point them at your own with `--rendezvous`/`--relay` or the `ENTANGLE_RENDEZVOUS`/`ENTANGLE_RELAY` environment variables.
+`--tool` takes `claude-code`, `codex`, `opencode`, or `all`. It defaults to `all`, so you rarely need it: `sessions` shows every agent on the machine, and `share`/`send` work out which one an id belongs to. Pass it when you want a listing narrowed to a single tool.
+
+`inspect` shows what is inside a bundle. `verify` checks the sessions already on this machine are resume-ready (Claude Code only, like `export`). `send`/`receive` use the public magic-wormhole servers by default; point them at your own with `--rendezvous`/`--relay` or the `ENTANGLE_RENDEZVOUS`/`ENTANGLE_RELAY` environment variables.
 
 </details>
 
@@ -267,14 +269,17 @@ entangle gui      [bundle] [--port N]
 
 **Some sessions are missing from the list.** Sessions recorded inside a temporary directory are hidden, since they are throwaway (some tools run Claude Code from a scratch folder and leave hundreds behind). Set `ENTANGLE_INCLUDE_TEMP=1` to show them.
 
-**Do other coding agents work?** Yes. [OpenAI Codex CLI](https://github.com/openai/codex) and [opencode](https://github.com/anomalyco/opencode) sessions are listed alongside your Claude Code ones, and you can share and send them the same way:
+**Do other coding agents work?** Yes, and you do not have to say so. [OpenAI Codex CLI](https://github.com/openai/codex) and [opencode](https://github.com/anomalyco/opencode) sessions are listed alongside your Claude Code ones by default, and share and send the same way:
 
 ```bash
-entangle sessions --tool all        # every tool on this machine
-entangle send <id> --tool codex     # hand a Codex session to a teammate
+entangle sessions                   # every tool on this machine
+entangle send <id>                  # the tool is worked out from the id
+entangle sessions --tool codex      # narrow it when you want only one
 ```
 
-The receiving side needs no flag: which tool a session came from travels with it, so `receive` and `import` put it back where it belongs. They do need that tool installed. What is *not* supported yet is opening a session from one tool inside a different one; a Codex session goes to Codex.
+In the cockpit (`entangle` on its own) the list starts with every tool merged together; press `t` to step through one tool at a time and back to all.
+
+The receiving side needs no flag either: which tool a session came from travels with it, so `receive` and `import` put it back where it belongs. They do need that tool installed. Two things are not covered yet - opening a session from one tool inside a different one (a Codex session goes to Codex), and whole-machine `export`/`verify`, which read the Claude Code layout only. Move a Codex or opencode session with `share`/`send` instead; both say so when they leave something out.
 
 </details>
 

@@ -99,7 +99,7 @@ func Run(args []string) error {
 }
 
 func printHelp() {
-	fmt.Print("entangle " + Version() + " - move your Claude Code history between machines\n\n" +
+	fmt.Print("entangle " + Version() + " - hand a live coding session to anyone\n\n" +
 		"USAGE:\n" +
 		"  entangle                 open the interactive cockpit (default with a terminal)\n" +
 		"  entangle tui             open the interactive cockpit explicitly\n" +
@@ -107,20 +107,27 @@ func printHelp() {
 		"  entangle import  <bundle> [--dry-run] [--map OLD=NEW]... [--project P]... [--target-os OS] [--overwrite] [--deep] [--yes]\n" +
 		"  entangle inspect <bundle>\n" +
 		"  entangle verify  [--config-dir DIR]\n" +
-		"  entangle sessions [--tool claude-code|codex|opencode|all] [--project P] [--config-dir DIR] [--json]\n" +
+		"  entangle sessions [--tool all|claude-code|codex|opencode] [--project P] [--config-dir DIR] [--json]\n" +
 		"  entangle share   <session-id-prefix | --last> [--tool T] [--project P] [--out FILE] [--with-context] [--no-redact] [--yes]\n" +
 		"  entangle send    <session-id-prefix | --last> [--tool T] [--project P] [--with-context] [--no-redact] [--yes]\n" +
 		"  entangle receive <code> [--config-dir DIR] [--map OLD=NEW]... [--yes]\n" +
 		"  entangle update  [--check] [--yes]\n" +
 		"  entangle gui     [bundle] [--port N]\n\n" +
-		"EXPORT runs on the OLD machine and writes a portable bundle.\n" +
-		"IMPORT runs on the NEW machine and restores it, translating paths for this OS\n" +
-		"(Linux, macOS, or Windows - drive letters and backslashes handled).\n" +
+		"SESSIONS, SHARE and SEND cover every coding agent on this machine by default -\n" +
+		"Claude Code, Codex and opencode together. Paste an id from the list into SHARE\n" +
+		"or SEND and the right tool is worked out for you; --tool narrows the list when\n" +
+		"you want only one. IMPORT and RECEIVE read whichever tool a bundle came from.\n" +
+		"EXPORT and VERIFY are Claude Code only for now: they move and check a whole\n" +
+		"machine's history at once, which needs a per-tool restore layout that does not\n" +
+		"exist yet.\n\n" +
 		"SESSIONS lists your conversations so you can find one to hand off. SHARE packs a\n" +
 		"single session into a file for a teammate (secrets scrubbed first). SEND does the\n" +
 		"same but streams it over an end-to-end-encrypted connection: you read out a short\n" +
-		"code and they RECEIVE it, no file to move. GUI opens a point-and-click wizard.\n" +
-		"VERIFY checks migrated sessions are resume-ready. Your login is never copied.\n")
+		"code and they RECEIVE it, no file to move. GUI opens a point-and-click wizard.\n\n" +
+		"EXPORT runs on the OLD machine and writes a portable bundle. IMPORT runs on the\n" +
+		"NEW machine and restores it, translating paths for this OS (Linux, macOS, or\n" +
+		"Windows - drive letters and backslashes handled). VERIFY then checks the\n" +
+		"migrated sessions are resume-ready. Your login is never copied.\n")
 }
 
 func runExport(args []string) error {
@@ -134,10 +141,16 @@ func runExport(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Exported %d project(s), %d session(s) -> %s (%s)\n",
+	fmt.Printf("Exported %d Claude Code project(s), %d session(s) -> %s (%s)\n",
 		res.Projects, res.Sessions, res.Path, exporter.HumanSize(res.Bytes))
 	if res.UnknownPaths > 0 {
 		fmt.Printf("Note: %d folder(s) had no recoverable path; they import under their original name.\n", res.UnknownPaths)
+	}
+	// Say what was left out. A user with three agents installed would otherwise
+	// read "exported" as "all of it" and find out on the new machine.
+	if others := otherToolsPresent(); len(others) > 0 {
+		fmt.Printf("Not included: %s. Whole-machine export covers Claude Code only so far;\n"+
+			"move those one at a time with: entangle share <id>\n", strings.Join(others, " and "))
 	}
 	return nil
 }
@@ -194,6 +207,13 @@ func runVerify(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// verify inspects what is already installed, so a filename here means the user
+	// expected it to check a bundle. Silently ignoring it reported healthy-looking
+	// numbers about something they were not asking about, which reads as a pass.
+	if fs.NArg() > 0 {
+		return fmt.Errorf("verify checks the sessions already on this machine and takes no file argument.\n"+
+			"To look inside a bundle before importing it, run:\n  entangle inspect %s", fs.Arg(0))
+	}
 	tp, err := claudedir.Locate(*cfg)
 	if err != nil {
 		return err
@@ -213,13 +233,28 @@ func runVerify(args []string) error {
 		}
 		fmt.Printf("  [%s] %s  (%d session(s))\n", status, v.Folder, v.Sessions)
 	}
-	fmt.Printf("\n%d/%d project(s) resume-ready.\n", ok, len(results))
+	fmt.Printf("\n%d/%d Claude Code project(s) resume-ready.\n", ok, len(results))
+	if others := otherToolsPresent(); len(others) > 0 {
+		fmt.Printf("Not checked: %s. Verify reads the Claude Code transcript format only.\n", strings.Join(others, " and "))
+	}
 	return nil
 }
 
-// ProviderClaudeCode names the coding tool a session belongs to. It is the only
-// value emitted today; the identifier is stable because it travels in output
-// other programs parse.
+// otherToolsPresent names the installed tools that the whole-machine commands do
+// not cover, for a user standing in front of a report that looks complete.
+func otherToolsPresent() []string {
+	var out []string
+	for _, b := range agent.Installed("") {
+		if b.Provider.ID() != agent.ClaudeCode {
+			out = append(out, b.Provider.DisplayName())
+		}
+	}
+	return out
+}
+
+// ProviderClaudeCode names the coding tool a session belongs to. Codex and
+// opencode are emitted too; the identifiers are stable because they travel in
+// output other programs parse.
 const ProviderClaudeCode = "claude-code"
 
 // SessionJSON is the shape `sessions --json` emits, one element per session.
@@ -249,16 +284,14 @@ func runSessions(args []string) error {
 	cfg := fs.String("config-dir", "", "override the config dir of the selected tool")
 	project := fs.String("project", "", "only sessions whose project path or folder contains this")
 	asJSON := fs.Bool("json", false, "output the session list as JSON (for tooling, e.g. the editor extension)")
-	tool := fs.String("tool", string(agent.ClaudeCode),
-		"which coding tool to list: "+strings.Join(agent.IDs(), ", ")+", or all")
+	tool := fs.String("tool", "", toolFlagUsage("list"))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	// Listing goes through the provider registry, so this command never learns how
-	// any particular tool stores its sessions. The default is Claude Code, which
-	// keeps existing behaviour byte for byte; other tools are opt-in.
-	sessions, multi, err := listFor(*tool, *cfg)
+	// any particular tool stores its sessions.
+	sessions, multi, err := listFor(toolSelection(*tool, *cfg), *cfg)
 	if err != nil {
 		return err
 	}
@@ -294,14 +327,10 @@ func runSessions(args []string) error {
 	} else {
 		fmt.Fprintln(tw, "ID\tLAST ACTIVE\tMSGS\tPROJECT\tTITLE")
 	}
-	nonClaude := 0
 	for _, s := range sessions {
 		proj := elideLeft(s.ProjectPath, projectColWidth)
 		if proj == "" {
 			proj = "(unknown)"
-		}
-		if s.Provider != agent.ClaudeCode {
-			nonClaude++
 		}
 		if multi {
 			fmt.Fprintf(tw, "%s\t", s.Provider)
@@ -311,11 +340,6 @@ func runSessions(args []string) error {
 	}
 	tw.Flush()
 	fmt.Printf("\n%d session(s). Share one with: entangle share <ID>\n", len(sessions))
-	if nonClaude > 0 {
-		// Say plainly what does not work yet, rather than letting someone discover
-		// it when share fails on a session this command just offered them.
-		fmt.Printf("Note: %d session(s) are from another tool. Listing works; sharing and moving them does not yet.\n", nonClaude)
-	}
 	return nil
 }
 
@@ -333,6 +357,59 @@ func elideLeft(s string, max int) string {
 		return s
 	}
 	return "…" + string(r[len(r)-(max-1):])
+}
+
+// toolAll is the --tool value meaning "every coding agent installed here", and
+// the default for every command that resolves a session.
+//
+// entangle is not a Claude Code tool with other agents bolted on. Defaulting to
+// one vendor means a Codex user runs `entangle sessions`, sees an empty list, and
+// concludes the tool does not support them - the opposite of what it does.
+const toolAll = "all"
+
+func toolFlagUsage(verb string) string {
+	return "which coding tool to " + verb + ": " + strings.Join(agent.IDs(), ", ") + ", or all (default all)"
+}
+
+// toolSelection turns an unset --tool into the right default for the flags the
+// user did pass.
+//
+// --config-dir has always named the Claude Code directory and nothing else, so a
+// command given one but no --tool means Claude Code. Without this, every existing
+// script that passes --config-dir would start failing on the "all" path, which
+// cannot honour a single tool's override. Naming both --tool all and --config-dir
+// is still an error, because then the user has asked for two contradictory things
+// rather than left one unsaid.
+func toolSelection(tool, configDir string) string {
+	if tool != "" {
+		return tool
+	}
+	if configDir != "" {
+		return string(agent.ClaudeCode)
+	}
+	return toolAll
+}
+
+// resolveTool decides which tool owns the session the user named.
+//
+// An explicit --tool is taken at its word. Otherwise the id is looked up across
+// every installed tool, so `entangle share <id>` works with an id copied out of a
+// listing without the user having to know, or type, which agent produced it.
+func resolveTool(tool, configDir, prefix, project string, last bool) (string, error) {
+	if tool != toolAll {
+		return tool, nil
+	}
+	sessions, _, err := listFor(toolAll, configDir)
+	if err != nil {
+		return "", err
+	}
+	agent.SortSessions(sessions)
+	sessions = filterSessions(sessions, project)
+	s, err := pickSession(sessions, prefix, last, "")
+	if err != nil {
+		return "", err
+	}
+	return string(s.Provider), nil
 }
 
 // listFor gathers sessions for a --tool selection. multi reports whether more than
@@ -357,6 +434,11 @@ func listFor(tool, configDir string) (sessions []agent.Session, multi bool, err 
 			}
 			sessions = append(sessions, s...)
 		}
+		// Each provider numbered its own sessions in isolation, so two tools can
+		// hand back the same handle. Re-derive them over the joined list: a handle
+		// printed here is one the user pastes straight back into `share`, so it has
+		// to be unique across everything shown, not just within one tool.
+		agent.AssignShortIDs(sessions, agent.ShortIDMin)
 		return sessions, len(bounds) > 1, nil
 	}
 
@@ -394,7 +476,7 @@ func runShare(args []string) error {
 	withContext := fs.Bool("with-context", false, "also include the project's memory/context files (Claude Code only)")
 	noRedact := fs.Bool("no-redact", false, "do NOT scrub secrets before packing (not recommended)")
 	yes := fs.Bool("yes", false, "skip the confirmation prompt")
-	tool := fs.String("tool", string(agent.ClaudeCode), "which coding tool the session belongs to: "+strings.Join(agent.IDs(), ", "))
+	tool := fs.String("tool", "", toolFlagUsage("share from"))
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
@@ -407,9 +489,14 @@ func runShare(args []string) error {
 		return fmt.Errorf("usage: entangle share <session-id-prefix | --last>")
 	}
 
+	owner, err := resolveTool(toolSelection(*tool, *cfg), *cfg, prefix, *project, *last)
+	if err != nil {
+		return err
+	}
+
 	// Claude Code keeps its own long-standing path: its bundle layout is what every
 	// released binary reads, so it is deliberately left alone.
-	if agent.ID(*tool) == agent.ClaudeCode {
+	if agent.ID(owner) == agent.ClaudeCode {
 		return exporter.RunShare(exporter.ShareOptions{
 			ConfigDir:     *cfg,
 			Version:       Version(),
@@ -427,7 +514,7 @@ func runShare(args []string) error {
 	if *withContext {
 		fmt.Println("Note: --with-context only applies to Claude Code; ignoring it.")
 	}
-	b, err := packForeign(*tool, *cfg, prefix, *project, *last, !*noRedact)
+	b, err := packForeign(owner, *cfg, prefix, *project, *last, !*noRedact)
 	if err != nil {
 		return err
 	}
@@ -453,7 +540,7 @@ func runShare(args []string) error {
 	fmt.Printf("\nWrote %s\n", dest)
 	fmt.Printf("Your teammate imports it with: entangle import %s\n", dest)
 	fmt.Printf("They need %s installed, and should run it from the project folder they want the session attached to.\n",
-		displayNameOf(*tool))
+		displayNameOf(owner))
 	return nil
 }
 
@@ -481,9 +568,17 @@ func packForeign(tool, configDir, prefix, project string, last, redactOn bool) (
 
 // pickSession resolves an id prefix, or the most recent session with --last,
 // erroring clearly on nothing-matched and on an ambiguous prefix.
+//
+// toolName scopes the messages to one tool; empty means the search ran across all
+// of them, and the wording drops the vendor so it does not claim a scope it
+// did not have.
 func pickSession(sessions []agent.Session, prefix string, last bool, toolName string) (agent.Session, error) {
+	scope, seeAlso := "", "entangle sessions"
+	if toolName != "" {
+		scope, seeAlso = toolName+" ", "entangle sessions --tool "+toolName
+	}
 	if len(sessions) == 0 {
-		return agent.Session{}, fmt.Errorf("no %s sessions found on this machine", toolName)
+		return agent.Session{}, fmt.Errorf("no %ssessions found on this machine", scope)
 	}
 	if last {
 		return sessions[0], nil // already newest-first
@@ -498,14 +593,50 @@ func pickSession(sessions []agent.Session, prefix string, last bool, toolName st
 	case 1:
 		return hits[0], nil
 	case 0:
-		return agent.Session{}, fmt.Errorf("no %s session matches %q (see: entangle sessions --tool %s)", toolName, prefix, toolName)
-	default:
-		var ids []string
-		for _, h := range hits {
-			ids = append(ids, h.ShortID)
-		}
-		return agent.Session{}, fmt.Errorf("%q matches %d sessions (%s); use a longer id", prefix, len(hits), strings.Join(ids, ", "))
+		return agent.Session{}, fmt.Errorf("no %ssession matches %q (see: %s)", scope, prefix, seeAlso)
 	}
+
+	// A tool can hold one session id under more than one project - Claude Code
+	// does it when the same conversation is resumed from a different folder. The
+	// ids are then identical, so "use a longer id" is advice that cannot be
+	// followed. Name the projects and point at the flag that can separate them.
+	sameID := true
+	for _, h := range hits[1:] {
+		if h.ID != hits[0].ID {
+			sameID = false
+			break
+		}
+	}
+	if sameID {
+		var where []string
+		for _, h := range hits {
+			p := h.ProjectPath
+			if p == "" {
+				p = h.GroupKey
+			}
+			where = append(where, p)
+		}
+		return agent.Session{}, fmt.Errorf("id %s exists in %d projects (%s); pick one with --project <substring>",
+			hits[0].ShortID, len(hits), strings.Join(where, ", "))
+	}
+
+	tools := map[agent.ID]bool{}
+	for _, h := range hits {
+		tools[h.Provider] = true
+	}
+	var ids []string
+	for _, h := range hits {
+		label := h.ShortID
+		if len(tools) > 1 {
+			label += " (" + string(h.Provider) + ")"
+		}
+		ids = append(ids, label)
+	}
+	hint := "use a longer id"
+	if len(tools) > 1 {
+		hint = "use a longer id, or name the tool with --tool"
+	}
+	return agent.Session{}, fmt.Errorf("%q matches %d sessions (%s); %s", prefix, len(hits), strings.Join(ids, ", "), hint)
 }
 
 func displayNameOf(tool string) string {
@@ -567,7 +698,7 @@ func confirmShare(preview exporter.SharePreview) bool {
 // changes hands.
 func runSend(args []string) error {
 	fs := flag.NewFlagSet("send", flag.ContinueOnError)
-	cfg := fs.String("config-dir", "", "override the Claude config dir")
+	cfg := fs.String("config-dir", "", "override the selected tool's config dir")
 	last := fs.Bool("last", false, "send your most recent session")
 	project := fs.String("project", "", "disambiguate by project when the same id exists in more than one")
 	withContext := fs.Bool("with-context", false, "also include the project's memory/context files")
@@ -577,7 +708,7 @@ func runSend(args []string) error {
 	relay := fs.String("relay", envOr("ENTANGLE_RELAY", ""), "transit relay host:port (default: public magic-wormhole)")
 	words := fs.Int("code-words", 2, "number of words in the transfer code")
 	timeout := fs.Duration("timeout", 15*time.Minute, "give up if the peer does not connect within this time")
-	tool := fs.String("tool", string(agent.ClaudeCode), "which coding tool the session belongs to: "+strings.Join(agent.IDs(), ", "))
+	tool := fs.String("tool", "", toolFlagUsage("send from"))
 	pos, err := parseInterleaved(fs, args)
 	if err != nil {
 		return err
@@ -590,13 +721,18 @@ func runSend(args []string) error {
 		return fmt.Errorf("usage: entangle send <session-id-prefix | --last>")
 	}
 
+	owner, err := resolveTool(toolSelection(*tool, *cfg), *cfg, prefix, *project, *last)
+	if err != nil {
+		return err
+	}
+
 	// The transfer itself does not care what is inside the bundle, so the only
 	// difference between tools is how the bundle gets built.
 	var (
 		buf      bytes.Buffer
 		sendName string
 	)
-	if agent.ID(*tool) == agent.ClaudeCode {
+	if agent.ID(owner) == agent.ClaudeCode {
 		b, perr := exporter.PrepareShare(exporter.ShareOptions{
 			ConfigDir:     *cfg,
 			Version:       Version(),
@@ -621,7 +757,7 @@ func runSend(args []string) error {
 		if *withContext {
 			fmt.Println("Note: --with-context only applies to Claude Code; ignoring it.")
 		}
-		b, perr := packForeign(*tool, *cfg, prefix, *project, *last, !*noRedact)
+		b, perr := packForeign(owner, *cfg, prefix, *project, *last, !*noRedact)
 		if perr != nil {
 			return perr
 		}
@@ -748,7 +884,9 @@ func applyBundle(bundlePath string, opts importer.Options) error {
 		return err
 	}
 	name := displayNameOf(string(id))
-	fmt.Printf("This is a %s session. Attaching it to the current directory:\n  %s\n", name, targetDir)
+	// Phrased to avoid "a"/"an", which no tool name can satisfy in general: it is
+	// "a Claude Code session" but "an OpenAI Codex CLI session".
+	fmt.Printf("This bundle holds one %s session. Attaching it to the current directory:\n  %s\n", name, targetDir)
 	if !opts.AssumeYes && !confirm("Import it here?") {
 		fmt.Println("Aborted - nothing was written.")
 		return nil

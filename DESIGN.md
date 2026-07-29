@@ -30,6 +30,8 @@ The tool is a single Go binary with small, single-purpose packages:
 
 ```
 internal/
+  agent/       the seam between entangle and each coding tool it supports
+  agentshare/  pack and unpack one non-Claude session, prefixed by tool
   claudedir/   locate ~/.claude, discover projects, recover true paths, list sessions
   manifest/    the description carried inside every bundle
   bundle/      read/write the .tgz archive (to a file, memory, or a network stream)
@@ -51,6 +53,47 @@ Two design rules keep this honest:
 - **Import is one code path.** The CLI, the GUI, and a wormhole receive all end
   up calling the same importer, so the safety checks and the resume-ready
   verification apply everywhere.
+
+## Supporting more than one coding agent
+
+`internal/agent` is the only place that knows a tool's storage layout. Each
+supported agent implements `Provider` - where it keeps its data, and what
+sessions are there - and registers itself from its own `init`, so importing a
+provider package is what enables it and no central list has to be maintained.
+The CLI, the cockpit, and the editor extension all read sessions through that
+one vocabulary.
+
+Three decisions do most of the work here:
+
+- **Every command covers every tool by default.** `--tool` defaults to `all`,
+  and `share`/`send` look an id up across all installed agents rather than
+  requiring the user to name one. Defaulting to a single vendor had a specific
+  failure: a Codex user runs `entangle sessions`, sees an empty list, and
+  concludes the tool does not support them - the opposite of the truth. The one
+  exception is `--config-dir`, which has only ever named the Claude Code
+  directory: given without `--tool`, it still means Claude Code, so existing
+  scripts keep working. Given *with* `--tool all` it is refused, because one
+  directory cannot be the override for three tools.
+- **A tool that is not installed is not an error.** `Locate` reports absence,
+  and one broken agent is skipped rather than blanking the whole listing. A
+  machine with a single coding tool behaves exactly as it did before the
+  abstraction existed: no empty sections, no warnings.
+- **Display handles are re-derived after merging.** Each provider numbers its
+  own sessions in isolation, so handles that are unique per tool can collide
+  once two lists are joined. Anything that merges re-runs `AssignShortIDs` over
+  the combined slice, growing each prefix git-style only until it is unique -
+  and not at all when even the full id is ambiguous, which happens when a
+  session is copied into a second project and no prefix can ever separate the
+  two.
+
+Claude Code deliberately does *not* implement the `Sharer` interface. Its bundle
+layout is what every already-released binary reads, so it keeps its original
+exporter untouched; other tools pack under their own `agents/<tool>/` prefix,
+which a pre-multi-tool binary will refuse rather than unpack into `~/.claude`.
+Whole-machine `export` and `verify` remain Claude-only for now, because
+restoring a hundred foreign sessions needs a per-tool project layout that does
+not exist yet - so both commands say what they left out instead of implying
+they covered it.
 
 ## Recovering the true path
 

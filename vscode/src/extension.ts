@@ -42,13 +42,23 @@ interface Session {
   title: string;
 }
 
-// providerLabel is the short badge shown next to a session, omitted for Claude
-// Code so the common case stays uncluttered.
-function providerLabel(s: Session): string {
-  if (!s.provider || s.provider === 'claude-code') {
+// providerLabel is the short badge naming which coding tool recorded a session.
+//
+// mixed says whether the list it appears in holds more than one tool. On a
+// single-tool machine the badge would say the same thing on every row, so it is
+// dropped; in a mixed list every row carries it, including Claude Code's -
+// badging only the others reads as "these are the unusual ones".
+function providerLabel(s: Session, mixed: boolean): string {
+  if (!mixed || !s.provider) {
     return '';
   }
   return ` · ${s.provider}`;
+}
+
+// isMixed reports whether a listing spans more than one coding tool.
+function isMixed(sessions: Session[]): boolean {
+  const seen = new Set(sessions.map((s) => s.provider || 'claude-code'));
+  return seen.size > 1;
 }
 
 let extContext: vscode.ExtensionContext;
@@ -302,12 +312,13 @@ async function pickSession(placeHolder: string): Promise<Session | undefined> {
     return undefined;
   }
   if (sessions.length === 0) {
-    vscode.window.showInformationMessage('No Claude Code sessions found on this machine.');
+    vscode.window.showInformationMessage('No coding sessions found on this machine.');
     return undefined;
   }
+  const mixed = isMixed(sessions);
   const items: SessionItem[] = sessions.map((s) => ({
     label: s.title || '(untitled session)',
-    description: `${s.shortId} · ${s.messages} msgs${providerLabel(s)}`,
+    description: `${s.shortId} · ${s.messages} msgs${providerLabel(s, mixed)}`,
     detail: s.project || '(unknown project)',
     session: s,
   }));
@@ -322,9 +333,9 @@ async function pickSession(placeHolder: string): Promise<Session | undefined> {
 // ---- sidebar: a clickable session list in the Activity Bar ----------------
 
 class SessionNode extends vscode.TreeItem {
-  constructor(public readonly session: Session) {
+  constructor(public readonly session: Session, mixed: boolean) {
     super(session.title || '(untitled session)', vscode.TreeItemCollapsibleState.None);
-    this.description = `${session.shortId} · ${session.messages} msgs${providerLabel(session)}`;
+    this.description = `${session.shortId} · ${session.messages} msgs${providerLabel(session, mixed)}`;
     this.tooltip = `${session.title || '(untitled)'}\n${session.project || '(unknown project)'}\n${session.messages} messages`;
     this.contextValue = 'session';
     this.iconPath = new vscode.ThemeIcon('comment-discussion');
@@ -351,7 +362,9 @@ class SessionsProvider implements vscode.TreeDataProvider<SessionNode> {
       return [];
     }
     try {
-      return (await listSessions(bin)).map((s) => new SessionNode(s));
+      const sessions = await listSessions(bin);
+      const mixed = isMixed(sessions);
+      return sessions.map((s) => new SessionNode(s, mixed));
     } catch (e) {
       await handleCliError(e);
       return [];
