@@ -38,6 +38,7 @@ import (
 	"github.com/gowtham-sai-yadav/entangle/internal/agentshare"
 	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
 	"github.com/gowtham-sai-yadav/entangle/internal/exporter"
+	"github.com/gowtham-sai-yadav/entangle/internal/handoff"
 	"github.com/gowtham-sai-yadav/entangle/internal/importer"
 	"github.com/gowtham-sai-yadav/entangle/internal/transfer"
 	"github.com/gowtham-sai-yadav/entangle/internal/updater"
@@ -45,6 +46,12 @@ import (
 
 // ---- palette --------------------------------------------------------------
 // The same cosmic/coral identity as the landing page, mapped to the terminal.
+
+// writeClipboard is a variable so a test can read back what the copy key actually
+// put on the clipboard. Calling the real one in tests would clobber whatever the
+// person running them had copied, and fails outright on a machine with no
+// clipboard at all.
+var writeClipboard = clipboard.WriteAll
 
 var (
 	signal = lipgloss.Color("#ff5a36") // coral - the one accent
@@ -821,15 +828,18 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case modeSend, modeReceive, modeBusy:
-		// The code is the one thing here worth copying, and reading it aloud is not
-		// always practical - people paste it into chat.
+		// Copies the whole invite, not just the code. Reading three words aloud is
+		// the nice case; the common one is pasting into chat, and the person on the
+		// other end may not have entangle at all. A bare code leaves them to be
+		// talked through an install by hand, so the clipboard carries the install
+		// line and where to run it.
 		if key == "c" && m.code != "" {
-			if err := clipboard.WriteAll(m.code); err != nil {
+			if err := writeClipboard(handoff.Invite(m.code)); err != nil {
 				// No clipboard is normal over SSH or in a bare container, so say what
 				// to do instead rather than presenting it as a failure.
 				m.copied = "no clipboard here - select the code above to copy it"
 			} else {
-				m.copied = "copied to clipboard"
+				m.copied = "copied - paste it to them"
 			}
 			return m, nil
 		}
@@ -957,12 +967,15 @@ func (m *model) cycleTool() {
 }
 
 // filterLabel names the active filter for the header and the key hint.
+//
+// It uses the provider's id, not its display name, so the label matches what the
+// rows underneath it already say. A list of rows reading `codex` sitting under a
+// filter reading "OpenAI Codex CLI" looks like two different things, and the id
+// is also what the --tool flag takes, so this is the name worth learning. Display
+// names still belong on the detail cards, where there is room to be formal.
 func (m model) filterLabel() string {
 	if m.filter == "" {
 		return "all tools"
-	}
-	if p, ok := agent.Get(m.filter); ok {
-		return p.DisplayName()
 	}
 	return string(m.filter)
 }
@@ -1221,10 +1234,10 @@ func (m model) sendView() string {
 		if m.copied != "" {
 			b.WriteString(okStyle.Render("  "+m.copied) + "\n")
 		} else {
-			b.WriteString(mutedStyle.Render("  press "+"c"+" to copy it") + "\n")
+			b.WriteString(mutedStyle.Render("  press c to copy this plus the install line") + "\n")
 		}
-		b.WriteString("\n" + dimStyle.Render("They run:") + "\n")
-		b.WriteString(paperText("  entangle receive "+m.code) + "\n\n")
+		b.WriteString("\n" + dimStyle.Render("They run this from inside their copy of the project:") + "\n")
+		b.WriteString(paperText("  "+handoff.Command(m.code)) + "\n\n")
 		if m.total > 0 {
 			b.WriteString(m.progress.ViewAs(ratio(m.done, m.total)) + " " + dimStyle.Render(pct(m.done, m.total)) + "\n")
 		} else {
@@ -1232,7 +1245,7 @@ func (m model) sendView() string {
 		}
 	}
 	if m.code != "" {
-		b.WriteString("\n" + keyHint("c", "copy code") + "    " + keyHint("esc", "cancel"))
+		b.WriteString("\n" + keyHint("c", "copy invite") + "    " + keyHint("esc", "cancel"))
 	} else {
 		b.WriteString("\n" + keyHint("esc", "cancel"))
 	}

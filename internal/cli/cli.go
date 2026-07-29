@@ -24,6 +24,7 @@ import (
 	"github.com/gowtham-sai-yadav/entangle/internal/bundle"
 	"github.com/gowtham-sai-yadav/entangle/internal/claudedir"
 	"github.com/gowtham-sai-yadav/entangle/internal/exporter"
+	"github.com/gowtham-sai-yadav/entangle/internal/handoff"
 	"github.com/gowtham-sai-yadav/entangle/internal/importer"
 	"github.com/gowtham-sai-yadav/entangle/internal/manifest"
 	"github.com/gowtham-sai-yadav/entangle/internal/paths"
@@ -834,12 +835,7 @@ func runSend(args []string) error {
 	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, CodeWords: *words}
 	fmt.Println("Preparing a secure transfer...")
 	err = transfer.Send(ctx, tcfg, sendName, buf.Bytes(),
-		func(code string) {
-			fmt.Printf("\nGive your teammate this code:\n\n    %s\n\n", code)
-			fmt.Println("They run this from inside their copy of the project:")
-			fmt.Printf("    entangle receive %s\n\n", code)
-			fmt.Println("Waiting for them to connect... (press Ctrl-C to cancel)")
-		},
+		printSendCode,
 		progressPrinter("Sending"),
 	)
 	if err != nil {
@@ -847,6 +843,22 @@ func runSend(args []string) error {
 	}
 	fmt.Println("\nDone. The session is on your teammate's machine.")
 	return nil
+}
+
+// printSendCode is what a sender reads off the screen the moment a code exists.
+// Split out of runSend so it can be tested without opening a real wormhole.
+//
+// It says the same thing twice on purpose, because two different people are being
+// served. Someone whose teammate already has entangle wants one short command.
+// Someone whose teammate does not needs a block they can paste as-is, or they end
+// up explaining what entangle is over chat while this transfer waits to time out.
+func printSendCode(code string) {
+	fmt.Printf("\nGive your teammate this code:\n\n    %s\n\n", code)
+	fmt.Println("They run this from inside their copy of the project:")
+	fmt.Printf("    %s\n\n", handoff.Command(code))
+	fmt.Printf("If they do not have entangle yet, paste them this instead:\n\n")
+	fmt.Println(handoff.Invite(code))
+	fmt.Println("\nWaiting for them to connect... (press Ctrl-C to cancel)")
 }
 
 // runReceive pulls a session bundle over a wormhole using the code, then hands

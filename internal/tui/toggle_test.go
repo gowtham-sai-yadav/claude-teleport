@@ -85,7 +85,10 @@ func TestFilteredListNamesOnlyItsOwnTool(t *testing.T) {
 	if strings.Contains(body, "codex one") || strings.Contains(body, "opencode one") {
 		t.Error("other tools' sessions are still shown after narrowing")
 	}
-	if !strings.Contains(body, "Claude Code") {
+	// Asserted against the header alone, not the whole body: every row in a
+	// claude-code-only list already prints "claude-code", so a body-wide check
+	// would pass even if the header stopped naming the filter entirely.
+	if !strings.Contains(plain(m.headerView()), "claude-code") {
 		t.Error("the header should name the tool currently being shown")
 	}
 }
