@@ -43,8 +43,8 @@ echo "seeded 4 demo sessions in $DEMO"
 # --- Codex demo rollouts -----------------------------------------------------
 # Same idea for the Codex provider: a throwaway CODEX_HOME so a screenshot never
 # shows anyone's real conversations.
-seed_codex() {
-  local home="$1" date="$2" id="$3" cwd="$4" title="$5" turns="$6"
+seed_codex() { # home  date  id  cwd  title  turns  minutes-ago
+  local home="$1" date="$2" id="$3" cwd="$4" title="$5" turns="$6" mins="$7"
   local dir="$home/sessions/$date"
   mkdir -p "$dir"
   local f="$dir/rollout-$(echo "$date" | tr '/' '-')T10-00-00-$id.jsonl"
@@ -59,11 +59,47 @@ seed_codex() {
       i=$((i + 1))
     done
   } > "$f"
+  # The provider dates a Codex session by the rollout file's mtime, so without
+  # this every one of them reads "just now" - two rows claiming the same instant,
+  # which looks like seeded data because it is.
+  touch -t "$(ago "$mins")" "$f"
 }
 
 if [ -n "${DEMO_CODEX_HOME:-}" ]; then
   rm -rf "$DEMO_CODEX_HOME"; mkdir -p "$DEMO_CODEX_HOME/sessions"
-  seed_codex "$DEMO_CODEX_HOME" "2026/07/01" "019f11e3-06e6-7d40-bd91-6600ac441e01" "/Users/dev/payments" "trace the failing webhook retry" 6
-  seed_codex "$DEMO_CODEX_HOME" "2026/06/28" "019f4d44-1a2b-7c00-9d10-5566aabbccdd" "/Users/dev/infra"    "tighten the deploy IAM policy"   4
+  #          home                date         id                                      cwd                    title                              turns  mins-ago
+  seed_codex "$DEMO_CODEX_HOME" "2026/07/01" "019f11e3-06e6-7d40-bd91-6600ac441e01" "/Users/dev/payments" "trace the failing webhook retry"   6      35
+  seed_codex "$DEMO_CODEX_HOME" "2026/06/28" "019f4d44-1a2b-7c00-9d10-5566aabbccdd" "/Users/dev/infra"    "tighten the deploy IAM policy"     4      300
   echo "seeded 2 demo Codex sessions in $DEMO_CODEX_HOME"
+fi
+
+# --- opencode demo session ---------------------------------------------------
+# opencode stores history in SQLite, and a session cannot be written by hand the
+# way the two above are: making one means running a real model turn. So this
+# restores docs/demo-opencode.sql, a dump from a disposable opencode install -
+# see the header of that file for what is in it and why it is safe to commit.
+#
+# This exists because the hero recording's whole claim is "every coding agent in
+# one list", and for a while the opencode row in it came from a leftover file in
+# /tmp that was in nobody's repo. Anyone re-recording got two tools and a quieter
+# point.
+if [ -n "${DEMO_OPENCODE_DB:-}" ]; then
+  dump="$(cd "$(dirname "$0")" && pwd)/demo-opencode.sql"
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    echo "skipping the opencode demo session: sqlite3 is not installed" >&2
+  elif [ ! -f "$dump" ]; then
+    echo "skipping the opencode demo session: $dump is missing" >&2
+  else
+    rm -f "$DEMO_OPENCODE_DB"
+    sqlite3 "$DEMO_OPENCODE_DB" <"$dump"
+    # opencode stores milliseconds since the epoch. Rewriting these keeps the row
+    # reading "1d ago" in every recording, instead of ageing into "4mo ago" and
+    # dating the GIF.
+    now_ms=$(( $(date +%s) * 1000 ))
+    day_ms=86400000
+    sqlite3 "$DEMO_OPENCODE_DB" "UPDATE session
+       SET time_created = $now_ms - 2 * $day_ms,
+           time_updated = $now_ms - $day_ms;"
+    echo "seeded 1 demo opencode session in $DEMO_OPENCODE_DB"
+  fi
 fi

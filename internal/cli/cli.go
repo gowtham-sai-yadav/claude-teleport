@@ -53,12 +53,67 @@ func Version() string {
 	return "dev"
 }
 
+// Run dispatches one command, bracketed by the update check: the cached answer
+// is shown before the work, and the cache is refreshed after it. Doing the fetch
+// afterwards is what keeps the check off the critical path - see
+// internal/updater/notice.go.
 func Run(args []string) error {
+	cmd := ""
+	if len(args) > 0 {
+		cmd = args[0]
+	}
+	showUpdateNotice(cmd)
+	err := dispatch(args)
+	// Only refresh when a person is watching. A script piping `sessions --json`
+	// will never be shown the notice, so the request would be pure cost - and it
+	// keeps test and CI runs off the network.
+	//
+	// `update` is excluded because it has just asked GitHub the same question
+	// itself, and a second request in the same run is waste against a limit of 60
+	// an hour for the whole machine. The cockpit is deliberately NOT excluded: it
+	// only checks live when someone presses `u`, so a user who does nothing but
+	// type `entangle` would otherwise never populate the cache the header reads,
+	// and the badge they are the entire audience for would never appear.
+	if isTerminal() && cmd != "update" && cmd != "upgrade" {
+		updater.RefreshCheck("", Version())
+	}
+	return err
+}
+
+// showUpdateNotice prints the one-line "newer version available" note, or
+// nothing.
+//
+// It goes to stderr, and only with a terminal attached, for the same reason the
+// rename notice does: `entangle sessions --json` is parsed by the editor
+// extension and must stay byte for byte what it was.
+//
+// The interactive cockpit is excluded because it takes over the screen the
+// moment it starts - the line would be wiped before it could be read - so it
+// shows the same information in its header instead.
+func showUpdateNotice(cmd string) {
+	switch cmd {
+	case "update", "upgrade":
+		return // this command does its own, live check
+	case "", "tui", "ui":
+		return // the cockpit shows it in the header
+	}
+	if !isTerminal() {
+		return
+	}
+	if latest := updater.AvailableUpdate(Version()); latest != "" {
+		fmt.Fprintf(os.Stderr, "note: entangle %s is available (you have %s). Update with: %s\n\n",
+			latest, Version(), updater.UpgradeCommand())
+	}
+}
+
+func isTerminal() bool { return term.IsTerminal(int(os.Stdout.Fd())) }
+
+func dispatch(args []string) error {
 	noticeIfLegacyName()
 	if len(args) == 0 {
 		// With a terminal attached, the friendliest default is the interactive
 		// cockpit; piped or redirected, fall back to plain help text.
-		if term.IsTerminal(int(os.Stdout.Fd())) {
+		if isTerminal() {
 			return runTUI(nil)
 		}
 		printHelp()
@@ -1014,10 +1069,22 @@ func runUpdate(args []string) error {
 		return nil
 	}
 	if *check {
-		fmt.Printf("A newer version is available (%s). Run `entangle update` to install it.\n", latestClean)
+		fmt.Printf("A newer version is available (%s). Install it with: %s\n", latestClean, updater.UpgradeCommand())
 		return nil
 	}
-	if !*yes && !confirm(fmt.Sprintf("Update to %s now?", latestClean)) {
+	// Replacing the executable inside a Homebrew keg works, and then leaves brew
+	// convinced the old version is still installed - so the next `brew upgrade`
+	// can put an older build back over the top. Say so before doing it, rather
+	// than letting the user discover it as a mysterious downgrade.
+	if updater.ManagedByHomebrew() {
+		fmt.Println("\nThis copy was installed by Homebrew. Updating in place here leaves brew's")
+		fmt.Println("record out of step with the file on disk, and a later `brew upgrade` can put")
+		fmt.Printf("an older build back. Use this instead:\n\n  brew upgrade entangle\n\n")
+		if !*yes && !confirm("Replace this file anyway?") {
+			fmt.Println("Aborted.")
+			return nil
+		}
+	} else if !*yes && !confirm(fmt.Sprintf("Update to %s now?", latestClean)) {
 		fmt.Println("Aborted.")
 		return nil
 	}
@@ -1063,7 +1130,9 @@ func runTUI(args []string) error {
 		return err
 	}
 	tcfg := transfer.Config{RendezvousURL: *rendezvous, TransitRelay: *relay, CodeWords: *words}
-	return tui.Run(*cfg, tcfg, Version())
+	// The cockpit takes over the screen, so it is handed the update note to show
+	// in its own header rather than having it printed underneath the alt-screen.
+	return tui.Run(*cfg, tcfg, Version(), updater.AvailableUpdate(Version()))
 }
 
 // parseInterleaved lets flags and positional arguments appear in any order.

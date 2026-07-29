@@ -11,7 +11,7 @@ Claude Code, OpenAI Codex, and opencode. Encrypted, no account, three spoken wor
 [![Go Report Card](https://goreportcard.com/badge/github.com/gowtham-sai-yadav/entangle)](https://goreportcard.com/report/github.com/gowtham-sai-yadav/entangle)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-<img src="docs/demo.gif" alt="entangle demo" width="820">
+<img src="docs/demo.gif" alt="typing entangle opens the cockpit: Claude Code, Codex and opencode sessions interleaved in one list, filtered a tool at a time, then a hand-off preview and the three-word code a teammate reads back" width="820">
 
 </div>
 
@@ -38,7 +38,9 @@ one this solves yet.)
 
 It is private by construction. Nothing is uploaded, there is no account and no server in
 the middle; a direct transfer is end-to-end encrypted, likely secrets are scrubbed before
-anything leaves your machine, and your login never travels at all.
+anything leaves your machine, and your login never travels at all. The one exception is an
+anonymous once-a-day check for a new release, which sends nothing about you and
+[can be turned off](#updating).
 
 > **Renamed.** This project was `claude-teleport` until it outgrew a single vendor.
 > The old command still works and still updates itself; it will tell you how to switch.
@@ -186,7 +188,27 @@ Prefer to stay in VS Code? The [entangle extension](vscode/) adds the same actio
 entangle update
 ```
 
-checks for a newer release and swaps the binary in place. (`brew upgrade entangle` works too, or re-run whichever installer you used.)
+checks for a newer release and swaps the binary in place. **If you installed with Homebrew, run `brew upgrade entangle` instead** — replacing the file inside a keg works, but leaves brew still believing the old version is installed, and a later `brew upgrade` can then put an older build back over the top. `entangle` warns you before doing this.
+
+You will also be told when a release exists, so a stale copy is a choice rather than an accident:
+
+```
+note: entangle 0.7.0 is available (you have 0.6.0). Update with: entangle update
+```
+
+The cockpit shows the same thing in its header. The rules behind it:
+
+- **It never makes you wait.** The check runs *after* your command has finished and only writes down what it found; the note appears the next time you run something. Your session list is never behind a network round trip.
+- **It asks at most once a day**, and stays quiet for a day after a failure too, so an offline machine does not retry on every command.
+- **It never writes to stdout** — the note goes to stderr, and only when a terminal is attached. `entangle sessions --json` stays machine-readable, and scripts and CI never see it.
+- **It says nothing when it fails.** No network errors you did not ask for.
+- **It is off for builds from source** (`dev` versions), which would otherwise be told forever that they are behind.
+
+This is the one thing entangle asks the network about on its own: an anonymous, unauthenticated `GET api.github.com/repos/.../releases/latest`. No account, no identifier, and nothing about your sessions. To turn it off entirely — the message *and* the request:
+
+```bash
+export ENTANGLE_NO_UPDATE_CHECK=1
+```
 
 ## What moves, and what doesn't
 
@@ -250,7 +272,7 @@ entangle gui      [bundle] [--port N]
 
 `--tool` takes `claude-code`, `codex`, `opencode`, or `all`. It defaults to `all`, so you rarely need it: `sessions` shows every agent on the machine, and `share`/`send` work out which one an id belongs to. Pass it when you want a listing narrowed to a single tool.
 
-`inspect` shows what is inside a bundle. `verify` checks the sessions already on this machine are resume-ready (Claude Code only, like `export`). `send`/`receive` use the public magic-wormhole servers by default; point them at your own with `--rendezvous`/`--relay` or the `ENTANGLE_RENDEZVOUS`/`ENTANGLE_RELAY` environment variables.
+`inspect` shows what is inside a bundle. `verify` checks the sessions already on this machine are resume-ready (Claude Code only, like `export`). `send`/`receive` use the public magic-wormhole servers by default; point them at your own with `--rendezvous`/`--relay` or the `ENTANGLE_RENDEZVOUS`/`ENTANGLE_RELAY` environment variables. `ENTANGLE_NO_UPDATE_CHECK=1` silences the [release check](#updating).
 
 </details>
 

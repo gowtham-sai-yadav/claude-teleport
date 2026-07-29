@@ -20,7 +20,7 @@ func plain(s string) string { return ansi.ReplaceAllString(s, "") }
 
 func fakeModel(t *testing.T, w, h int) model {
 	t.Helper()
-	m := newModel("", transfer.Config{}, "0.5.0")
+	m := newModel("", transfer.Config{}, "0.5.0", "")
 	mm, _ := m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 	m = mm.(model)
 	now := time.Now()
