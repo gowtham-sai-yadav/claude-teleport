@@ -11,7 +11,7 @@ Claude Code, OpenAI Codex, and opencode. Encrypted, no account, three spoken wor
 [![Go Report Card](https://goreportcard.com/badge/github.com/gowtham-sai-yadav/entangle)](https://goreportcard.com/report/github.com/gowtham-sai-yadav/entangle)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-<img src="docs/demo.gif" alt="entangle demo" width="820">
+<img src="docs/demo.gif" alt="typing entangle opens the cockpit: Claude Code, Codex and opencode sessions interleaved in one list, filtered a tool at a time, then a hand-off preview and the three-word code a teammate reads back" width="820">
 
 </div>
 
