@@ -188,6 +188,10 @@ type model struct {
 
 	// update flow
 	updLatest string
+	// restartTo is the binary to hand this terminal to on the way out, set once a
+	// self-update has finished. Read by Run after the program exits, because the
+	// handover can only happen with the terminal already given back.
+	restartTo string
 
 	// result screen
 	resTitle string
@@ -231,6 +235,9 @@ type doneMsg struct {
 	title string
 	body  string
 	err   error
+	// restart, when set, is the path of a binary that should take over this
+	// terminal once the user says so. Only a finished self-update sets it.
+	restart string
 }
 type updateAvailMsg struct {
 	latest string
@@ -249,8 +256,18 @@ type updateAvailMsg struct {
 func Run(configDir string, tcfg transfer.Config, version, newVersion string) error {
 	m := newModel(configDir, tcfg, version, newVersion)
 	prog := tea.NewProgram(m, tea.WithAltScreen())
-	_, err := prog.Run()
-	return err
+	final, err := prog.Run()
+	if err != nil {
+		return err
+	}
+	// Out here rather than inside the model on purpose: handing the process over
+	// while bubbletea still owns the tty leaves the new binary drawing into an alt
+	// screen it did not open and a terminal still in raw mode. By this line the
+	// terminal has been restored, so the new build starts as if launched by hand.
+	if fm, ok := final.(model); ok && fm.restartTo != "" {
+		return restartInto(fm.restartTo)
+	}
+	return nil
 }
 
 func newModel(configDir string, tcfg transfer.Config, version, newVersion string) model {
@@ -579,13 +596,25 @@ func startUpdate(ch chan tea.Msg, tag string) tea.Cmd {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
 			emit(ch, statusMsg("Downloading…"))
+			// Resolved before the swap, not after. Apply renames the new build over
+			// this path, and on Linux asking afterwards follows the old inode and can
+			// hand back a path with "(deleted)" stuck on the end - which would then be
+			// exec'd, putting the user back on the version they just replaced.
+			exe, exeErr := os.Executable()
 			err := updater.Apply(ctx, updater.DefaultRepo, "v"+strings.TrimPrefix(tag, "v"),
 				func(done, total int64) { emitProgress(ch, done, total) })
 			if err != nil {
 				emit(ch, doneMsg{err: err})
 				return
 			}
-			emit(ch, doneMsg{title: "Updated.", body: "Now on " + strings.TrimPrefix(tag, "v") + ". Restart to use the new version."})
+			version := strings.TrimPrefix(tag, "v")
+			if exeErr != nil {
+				// Rare, but the update itself did land, so report that plainly rather
+				// than offering a handover to a path that could not be resolved.
+				emit(ch, doneMsg{title: "Updated.", body: "Now on " + version + ". Restart to use the new version."})
+				return
+			}
+			emit(ch, doneMsg{title: "Updated.", body: "Now on " + version + ".", restart: exe})
 		}()
 		return nil
 	}
@@ -741,7 +770,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m.toResult("That didn't work.", msg.err.Error(), true), nil
 		}
-		return m.toResult(msg.title, msg.body, false), nil
+		nm := m.toResult(msg.title, msg.body, false)
+		nm.restartTo = msg.restart
+		return nm, nil
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -887,9 +918,22 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case modeResult:
-		// Any key returns home.
+		// A finished update is the one result worth acting on. The new build is
+		// already on disk, but this process is still the old one, so without this the
+		// only way to see the version you just installed is to quit and come back -
+		// which is where updates quietly don't happen.
+		//
+		// Quit rather than exec here: the handover has to wait until bubbletea has
+		// put the terminal back, so Run does it once this returns.
+		if m.restartTo != "" && key == "enter" {
+			return m, tea.Quit
+		}
+		// Any other key returns home, still running the old build. Clearing restartTo
+		// matters - leaving it set would exec on the next unrelated quit, long after
+		// the person declined.
 		m.mode = modeList
 		m.resTitle, m.resBody, m.resErr = "", "", false
+		m.restartTo = ""
 		return m, nil
 
 	case modeHelp:
@@ -1320,12 +1364,21 @@ func (m model) resultView() string {
 	if m.resErr {
 		titleStyle, glyph = errStyle, "✗ "
 	}
+	// After an update the footer is a real choice, not an acknowledgement, so it
+	// names both outcomes. Saying which version each key leaves you on is the
+	// point: the number on screen is the one they just installed, and the number
+	// they are still running is the old one.
+	footer := mutedStyle.Render("press any key to go back")
+	if m.restartTo != "" {
+		footer = keyHint("↵", "restart into "+m.updLatest) + "    " +
+			mutedStyle.Render("any other key stays on "+m.version)
+	}
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Bold(true).Render(glyph+m.resTitle),
 		"",
 		taglineStyle.Render(m.resBody),
 		"",
-		mutedStyle.Render("press any key to go back"),
+		footer,
 	)
 	style := cardStyle
 	if m.resErr {
