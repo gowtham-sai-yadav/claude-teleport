@@ -372,7 +372,7 @@ func runSessions(args []string) error {
 	}
 
 	if len(sessions) == 0 {
-		fmt.Println("No sessions found.")
+		explainNoSessions(toolSelection(*tool, *cfg), *cfg)
 		return nil
 	}
 	// The TOOL column appears only when more than one tool is in play, so someone
@@ -397,6 +397,67 @@ func runSessions(args []string) error {
 	tw.Flush()
 	fmt.Printf("\n%d session(s). Share one with: entangle share <ID>\n", len(sessions))
 	return nil
+}
+
+// explainNoSessions says what was searched instead of leaving an empty list to
+// speak for itself.
+//
+// "No sessions found." cannot be told apart from three different situations: no
+// coding tool is set up here at all, one is set up somewhere this did not look, or
+// the tools really are empty. Someone who installed entangle a minute ago hits the
+// first two far more often than the third, and four words send them away believing
+// it does not work. Naming the directories that were read turns it into a fact
+// they can act on.
+//
+// This is the same promise `export` already keeps by printing the tools it skipped.
+//
+// Mirrors Scan's override rule: --config-dir has only ever named the Claude Code
+// directory, so it is not handed to another provider.
+func explainNoSessions(sel, configDir string) {
+	if sel != toolAll {
+		// A tool named with --tool that is not installed never reaches here;
+		// agent.Resolve fails earlier with its own message. So it is present and
+		// simply has nothing recorded yet.
+		fmt.Println("No sessions found.")
+		if b, err := agent.Resolve(agent.ID(sel), configDir); err == nil {
+			fmt.Printf("%s is set up at %s and has no sessions recorded yet.\n",
+				b.Provider.DisplayName(), b.Roots.ConfigDir)
+		}
+		return
+	}
+
+	var missing []string
+	found := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	any := false
+	for _, p := range agent.All() {
+		r, ok, err := p.Locate("")
+		if err != nil || !ok {
+			missing = append(missing, p.DisplayName())
+			continue
+		}
+		fmt.Fprintf(found, "  %s\t%s\n", p.DisplayName(), r.ConfigDir)
+		any = true
+	}
+
+	if !any {
+		fmt.Println("No sessions found: none of these coding tools are set up on this machine.")
+		fmt.Println()
+		for _, name := range missing {
+			fmt.Println("  " + name)
+		}
+		fmt.Println()
+		fmt.Println("Using one of them from somewhere unusual? Name the directory:")
+		fmt.Println("  entangle sessions --tool claude-code --config-dir <dir>")
+		return
+	}
+
+	fmt.Println("No sessions found. Looked in:")
+	fmt.Println()
+	found.Flush()
+	if len(missing) > 0 {
+		fmt.Println()
+		fmt.Println("Not set up on this machine: " + strings.Join(missing, ", "))
+	}
 }
 
 // projectColWidth caps the project column. A single deeply nested path (an
