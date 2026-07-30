@@ -157,3 +157,53 @@ func TestVerifyRejectsAFileArgument(t *testing.T) {
 		t.Errorf("the error should point at the command that does read a bundle, got: %v", err)
 	}
 }
+
+// An empty list has to say what it searched. The bare "No sessions found." it used
+// to print is indistinguishable from "your tool is installed somewhere else", which
+// is the most common reason a brand new user sees nothing.
+func TestSessionsEmptyNamesWhatWasSearched(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() error {
+		return Run([]string{"sessions", "--tool", "claude-code", "--config-dir", dir})
+	})
+
+	if !strings.Contains(out, "No sessions found") {
+		t.Errorf("want the empty-list line, got:\n%s", out)
+	}
+	// The directory actually read is the fact that resolves the ambiguity, so it
+	// must appear. Without it the message is no better than the old one.
+	if !strings.Contains(out, dir) {
+		t.Errorf("empty list must name the directory it searched (%s), got:\n%s", dir, out)
+	}
+	if !strings.Contains(out, "Claude Code") {
+		t.Errorf("empty list must name the tool, got:\n%s", out)
+	}
+}
+
+// --json is a public contract: an empty result is [] and nothing else. The
+// explanation above is for humans and must never leak into it.
+func TestSessionsEmptyJSONStaysClean(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStdout(t, func() error {
+		return Run([]string{"sessions", "--json", "--config-dir", dir})
+	})
+
+	var got []map[string]any
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("empty --json must still parse, got %q: %v", out, err)
+	}
+	if len(got) != 0 {
+		t.Errorf("want an empty array, got %d entries", len(got))
+	}
+	if strings.Contains(out, "Looked in") || strings.Contains(out, "No sessions found") {
+		t.Errorf("human explanation leaked into --json:\n%s", out)
+	}
+}
