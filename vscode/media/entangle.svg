@@ -1,5 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
-  <circle cx="12" cy="13" r="2.2" fill="currentColor" stroke="none"/>
-  <path d="M7.4 13a4.6 4.6 0 0 1 9.2 0"/>
-  <path d="M4.4 13a7.6 7.6 0 0 1 15.2 0"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" role="img" aria-label="entangle">
+  <!--
+    The activity bar icon: the mark from docs/logo-mark.svg, redrawn in a 24 box
+    because that is the size VS Code asks for, and scaling a 64 box down to it
+    would land the strokes on half pixels.
+
+    Same rule as the other two files: the holes sit exactly on the crossings,
+    which are at x=5.05 and x=18.95 in this box. Recompute them if a strand moves.
+  -->
+  <defs>
+    <mask id="entangle-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+      <rect width="24" height="24" fill="#fff"/>
+      <circle cx="5.05" cy="12" r="2.9" fill="#000"/>
+      <circle cx="18.95" cy="12" r="2.9" fill="#000"/>
+    </mask>
+  </defs>
+  <g stroke="currentColor" stroke-width="3.6" stroke-linecap="round">
+    <path d="M2.5 20.5C2.5 4.5 21.5 4.5 21.5 20.5"/>
+    <path d="M2.5 3.5C2.5 19.5 21.5 19.5 21.5 3.5" mask="url(#entangle-gap)"/>
+  </g>
 </svg>
