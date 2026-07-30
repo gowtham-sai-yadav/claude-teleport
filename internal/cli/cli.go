@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -77,6 +78,14 @@ func Run(args []string) error {
 	// and the badge they are the entire audience for would never appear.
 	if isTerminal() && cmd != "update" && cmd != "upgrade" {
 		updater.RefreshCheck("", Version())
+	}
+	// `entangle send -h` asks a flag set for its usage, which prints it and hands
+	// back flag.ErrHelp. That is the command doing exactly what was asked, so it
+	// must not reach the caller as a failure: `cmd -h` returning a non-zero status
+	// breaks any script that checks one, and printing "error: flag: help
+	// requested" under the usage text reads like the help itself went wrong.
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
 	}
 	return err
 }
@@ -1240,6 +1249,17 @@ func parseMaps(in []string) ([]paths.Mapping, error) {
 }
 
 func runInspect(args []string) error {
+	// This command takes a path and no flags, so there is no flag set to catch -h
+	// for it. Without this, `entangle inspect --help` treats the flag as a
+	// filename and reports "open --help: no such file or directory", which reads
+	// like a bug in the tool rather than an answer to the question asked.
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		fmt.Println("usage: entangle inspect <bundle>")
+		fmt.Println()
+		fmt.Println("Prints what a bundle contains: tool, kind, whether it was redacted,")
+		fmt.Println("and the projects and session counts inside. Writes nothing.")
+		return nil
+	}
 	if len(args) < 1 {
 		return fmt.Errorf("usage: entangle inspect <bundle>")
 	}
@@ -1248,7 +1268,7 @@ func runInspect(args []string) error {
 		return err
 	}
 	if len(mb) == 0 {
-		return fmt.Errorf("no manifest.json found - is %q a entangle bundle?", args[0])
+		return fmt.Errorf("no manifest.json found - is %q an entangle bundle?", args[0])
 	}
 	var man manifest.Manifest
 	if err := json.Unmarshal(mb, &man); err != nil {
