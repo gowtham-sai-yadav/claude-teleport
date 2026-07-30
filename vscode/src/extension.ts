@@ -94,7 +94,7 @@ async function probeOK(bin: string): Promise<boolean> {
     const { stdout } = await pexecFile(bin, ['version'], { timeout: 5000 });
     const m = stdout.match(/(\d+)\.(\d+)\.(\d+)/);
     if (!m) {
-      return true; // runs but the version is unreadable — accept it
+      return true; // runs but the version is unreadable, so accept it
     }
     return cmpVer([+m[1], +m[2], +m[3]], MIN_VERSION) >= 0;
   } catch {
@@ -174,7 +174,7 @@ async function downloadCli(progress: vscode.Progress<{ message?: string }>): Pro
   const buf = await httpGet(`${base}/${asset}`);
   const got = crypto.createHash('sha256').update(buf).digest('hex');
   if (got.toLowerCase() !== want.toLowerCase()) {
-    throw new Error('checksum mismatch — refusing to install');
+    throw new Error('checksum mismatch, refusing to install');
   }
 
   const dest = managedBinPath();
@@ -191,7 +191,7 @@ async function getBin(): Promise<string | undefined> {
   }
   const { bin } = config();
 
-  // An explicit path the user set is authoritative — trust it, don't override.
+  // An explicit path the user set is authoritative, so trust it and don't override.
   if (bin !== 'entangle' && bin !== 'claude-teleport') {
     cachedBin = bin;
     return bin;
@@ -464,7 +464,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
   status.text = '$(radio-tower) entangle';
-  status.tooltip = 'entangle — hand a live coding session to a teammate';
+  status.tooltip = 'entangle: hand a live coding session to a teammate';
   status.command = 'entangle.menu';
   status.show();
 

@@ -4,9 +4,9 @@
 //   npm test
 //
 // It verifies two things that break extensions in practice:
-//   1) manifest wiring  — every declared command has a handler; every menu and
+//   1) manifest wiring: every declared command has a handler; every menu and
 //      TreeItem command points at a real, registered command.
-//   2) activation       — activate() runs without throwing and registers the
+//   2) activation:      activate() runs without throwing and registers the
 //      status bar, the sessions view, and all commands.
 
 const assert = require('assert');

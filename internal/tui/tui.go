@@ -1111,12 +1111,12 @@ func (m model) helpView() string {
 	rows = append(rows,
 		"",
 		head("Hand a session to a teammate"),
-		row("↵", "send — stream it over an encrypted code, no file"),
-		row("s", "share — write it to a .tgz file to send yourself"),
-		row("r", "receive — type their code; it lands in this folder"),
+		row("↵", "send: stream it over an encrypted code, no file"),
+		row("s", "share: write it to a .tgz file to send yourself"),
+		row("r", "receive: type their code; it lands in this folder"),
 		"",
 		head("Move your own history between machines"),
-		row("e", "export — pack every session into one backup file"),
+		row("e", "export: pack every session into one backup file"),
 	)
 	// Same reasoning, and the same honesty the CLI applies: whole-machine backup
 	// reads the Claude Code layout only, so say so wherever several tools are in
@@ -1125,15 +1125,15 @@ func (m model) helpView() string {
 		rows = append(rows, row("", "backup covers Claude Code only; use s or ↵ for the rest"))
 	}
 	rows = append(rows,
-		row("i", "import — restore a backup or shared file here"),
+		row("i", "import: restore a backup or shared file here"),
 		"",
 		head("Other"),
-		row("c", "context — include project memory in a share (now: "+ctx+")"),
-		row("u", "update — install a newer entangle in place"),
+		row("c", "context: include project memory in a share ("+ctx+" now)"),
+		row("u", "update: install a newer entangle in place"),
 		row("q", "quit"),
 		"",
 		mutedStyle.Render("Secrets are scrubbed before anything leaves. Everything runs"),
-		mutedStyle.Render("on this machine — no account, no server in the middle."),
+		mutedStyle.Render("on this machine. No account, no server in the middle."),
 		"",
 		keyHint("any key", "back"),
 	)

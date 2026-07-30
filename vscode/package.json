@@ -1,7 +1,7 @@
 {
   "name": "entangle",
   "displayName": "entangle",
-  "description": "Hand a live coding session to a teammate over an encrypted code, or share it to a file — Claude Code, Codex, or opencode, without leaving VS Code.",
+  "description": "Hand a live coding session to a teammate over an encrypted code, or share it to a file. Works with Claude Code, Codex and opencode, without leaving VS Code.",
   "version": "0.1.0",
   "publisher": "gowtham-sai-yadav",
   "license": "MIT",
@@ -54,7 +54,7 @@
     "viewsWelcome": [
       {
         "view": "entangle.sessions",
-        "contents": "No coding sessions to show.\n[Refresh](command:entangle.refresh)\n[Receive a session](command:entangle.receive)\n\nThe entangle CLI does the work — make sure it is installed.\n[Install entangle](https://gowthamsai.in/entangle/#install)"
+        "contents": "No coding sessions to show.\n[Refresh](command:entangle.refresh)\n[Receive a session](command:entangle.receive)\n\nThe entangle CLI does the work, so make sure it is installed.\n[Install entangle](https://gowthamsai.in/entangle/#install)"
       }
     ],
     "commands": [
