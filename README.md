@@ -4,7 +4,9 @@
 
 **Hand a live coding session to anyone.**
 
-Claude Code, OpenAI Codex, and opencode. Encrypted, no account, three spoken words.
+Claude Code, Codex, and opencode.
+
+Encrypted, no account, three spoken words.
 
 [![CI](https://github.com/gowtham-sai-yadav/entangle/actions/workflows/ci.yml/badge.svg)](https://github.com/gowtham-sai-yadav/entangle/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/gowtham-sai-yadav/entangle?sort=semver)](https://github.com/gowtham-sai-yadav/entangle/releases)
@@ -16,11 +18,6 @@ Claude Code, OpenAI Codex, and opencode. Encrypted, no account, three spoken wor
 </div>
 
 ---
-
-> Teleporting a quantum state takes two things: a pair of entangled particles, and
-> one short message sent the ordinary way. Neither is enough on its own.
->
-> This is the same trick, for your work. Two machines, and three words said out loud.
 
 Your coding sessions live only on the machine that made them. So the day you want to
 hand a conversation to a teammate, or move to a new laptop, you are stuck: copying the
@@ -323,6 +320,10 @@ In the cockpit (`entangle` on its own) the list starts with every tool merged to
 The receiving side needs no flag either: which tool a session came from travels with it, so `receive` and `import` put it back where it belongs. They do need that tool installed. Two things are not covered yet - opening a session from one tool inside a different one (a Codex session goes to Codex), and whole-machine `export`/`verify`, which read the Claude Code layout only. Move a Codex or opencode session with `share`/`send` instead; both say so when they leave something out.
 
 </details>
+
+## Why "entangle"?
+
+Quantum teleportation needs two things that are useless apart: a link between two places, and a few words sent the ordinary way. Same here.
 
 ## Contributing
 
