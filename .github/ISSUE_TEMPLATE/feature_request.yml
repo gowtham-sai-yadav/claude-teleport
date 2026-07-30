@@ -1,0 +1,39 @@
+name: Feature or change
+description: Propose something entangle should do differently
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >
+        Describe the situation you are stuck in, not the feature. It is easier to
+        agree on a fix once the problem is clear, and sometimes there is already a way.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: Optional. A rough shape is fine — flags, output, behaviour.
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before you file
+      options:
+        - label: >
+            I checked [DESIGN.md](https://github.com/gowtham-sai-yadav/entangle/blob/main/DESIGN.md)
+            and the README's "What moves, and what doesn't"
+          required: false
+        - label: I searched existing issues
+          required: false
+
+  - type: textarea
+    id: help
+    attributes:
+      label: Would you want to build it?
+      description: >
+        Optional, and there is no wrong answer. If yes, say so and wait for a reply
+        before writing much — see CONTRIBUTING.md.

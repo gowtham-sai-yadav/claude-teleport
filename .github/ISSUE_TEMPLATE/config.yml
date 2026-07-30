@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or idea to talk through
+    url: https://github.com/gowtham-sai-yadav/entangle/discussions
+    about: Not sure it is a bug? Ask here first, no template needed.
+  - name: Security problem
+    url: https://github.com/gowtham-sai-yadav
+    about: Please do not open a public issue. Email the address on my profile.

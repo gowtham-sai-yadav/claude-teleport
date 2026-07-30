@@ -327,12 +327,13 @@ Quantum teleportation needs two things that are useless apart: a link between tw
 
 ## Contributing
 
-Issues and pull requests are welcome. The architecture and design decisions are written up in [DESIGN.md](DESIGN.md). To develop:
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, what CI checks, where each package lives, and the promises the code has to keep. The architecture and the reasoning behind it are in [DESIGN.md](DESIGN.md).
+
+Looking for something to pick up? [`help wanted`](https://github.com/gowtham-sai-yadav/entangle/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) is unclaimed work, and [`good first issue`](https://github.com/gowtham-sai-yadav/entangle/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) is where to start if you are new here.
 
 ```bash
-go test ./...                                    # unit tests
-go test -tags integration ./internal/transfer/   # a real send/receive over a local server
-go vet ./... && gofmt -l .                        # checks (gofmt should print nothing)
+go build -o /tmp/entangle .   # the main package is the repo root
+go test ./...
 ```
 
 CI runs on Linux, macOS, and Windows. Tagging `vX.Y.Z` builds and publishes the release automatically.
