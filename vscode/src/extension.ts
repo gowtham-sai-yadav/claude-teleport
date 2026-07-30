@@ -463,8 +463,8 @@ export function activate(context: vscode.ExtensionContext): void {
   extContext = context;
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
-  status.text = '$(radio-tower) teleport';
-  status.tooltip = 'entangle — hand a Claude Code session to a teammate';
+  status.text = '$(radio-tower) entangle';
+  status.tooltip = 'entangle — hand a live coding session to a teammate';
   status.command = 'entangle.menu';
   status.show();
 
