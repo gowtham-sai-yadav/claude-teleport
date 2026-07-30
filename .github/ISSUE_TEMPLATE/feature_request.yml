@@ -16,7 +16,7 @@ body:
     id: idea
     attributes:
       label: What you have in mind
-      description: Optional. A rough shape is fine — flags, output, behaviour.
+      description: "Optional. A rough shape is fine: flags, output, behaviour."
 
   - type: checkboxes
     id: checked
@@ -36,4 +36,4 @@ body:
       label: Would you want to build it?
       description: >
         Optional, and there is no wrong answer. If yes, say so and wait for a reply
-        before writing much — see CONTRIBUTING.md.
+        before writing much. See CONTRIBUTING.md.

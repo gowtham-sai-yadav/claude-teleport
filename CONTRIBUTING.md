@@ -5,14 +5,14 @@ what broke before you write code for it.
 
 ## Start here
 
-- **Typo, docs, a clear one-line bug** — send a PR straight away, no issue needed.
-- **New behaviour, a new flag, or anything that changes what lands on disk** — open an
+- **Typo, docs, a clear one-line bug.** Send a PR straight away, no issue needed.
+- **New behaviour, a new flag, or anything that changes what lands on disk.** Open an
   issue first. entangle writes into people's real `~/.claude`, and a design decided
   after the code exists usually means throwing the code away.
 - **Issues labelled [`help wanted`](https://github.com/gowtham-sai-yadav/entangle/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22)** are free to take. Leave a comment so two people
   don't start the same thing.
 - **Issues assigned to me** are already in progress. Comment if you want to argue about
-  the design, but please don't build them — you would be racing code you cannot see yet.
+  the design, but please don't build them. You would be racing code you cannot see yet.
 - **A question rather than a bug?** Use
   [Discussions](https://github.com/gowtham-sai-yadav/entangle/discussions).
 
@@ -21,7 +21,7 @@ Found a security problem? Don't open an issue. Email the address on
 
 ## Setup
 
-Go 1.26 or newer. Nothing else — no code generation, no external services.
+Go 1.26 or newer. Nothing else: no code generation, no external services.
 
 ```bash
 git clone https://github.com/gowtham-sai-yadav/entangle
@@ -50,7 +50,7 @@ go build ./...
 
 The test job runs on Linux, macOS **and Windows**. Path handling is the heart of this
 project, so a change that passes on your machine and fails on Windows is the normal
-failure — check the matrix, not just your terminal.
+failure. Check the matrix, not just your terminal.
 
 One thing CI does *not* run, because it needs a live local relay:
 
@@ -78,7 +78,7 @@ Run that yourself if you touch `internal/transfer`.
 | `internal/updater` | The once-a-day release check |
 
 The reasoning behind the design is in [DESIGN.md](DESIGN.md). Read it before proposing
-anything structural — most "why not just…" questions are answered there.
+anything structural. Most "why not just" questions are answered there.
 
 ## Rules the code has to keep
 
@@ -91,8 +91,8 @@ A PR that breaks one needs to argue for it explicitly, not slip it through.
 - **Secrets are scrubbed before anything leaves the machine**, and credentials are
   never included at all. Best effort is the stated bar; do not lower it.
 - **Nothing is uploaded and there is no account.** The only network call entangle makes
-  on its own is the anonymous release check, and `ENTANGLE_NO_UPDATE_CHECK=1` turns it
-  off completely — the message *and* the request.
+  on its own is the anonymous release check, and `ENTANGLE_NO_UPDATE_CHECK=1` turns off
+  both the message and the request.
 - **`--json` output stays machine-readable.** Notices go to stderr, and only when a
   terminal is attached. Scripts and CI must never see them.
 - **The GUI binds `127.0.0.1` only.**
@@ -115,7 +115,7 @@ docs: say which tools whole-machine migration covers
 Use the body to say **why**, especially for anything non-obvious. Someone reading
 `git log` in a year is the audience.
 
-Add a test when you fix a bug. 28 test files exist across `internal/` — find the
+Add a test when you fix a bug. 28 test files exist across `internal/`, so find the
 neighbouring one and follow it.
 
 `main` is protected, so everything lands through a PR with CI green.
@@ -123,5 +123,5 @@ neighbouring one and follow it.
 ## Releases
 
 Maintainer only: pushing a `vX.Y.Z` tag builds and publishes everything through
-GoReleaser — archives, checksums, the Homebrew tap, `.deb` and `.rpm`. There is no
+GoReleaser: archives, checksums, the Homebrew tap, `.deb` and `.rpm`. There is no
 version constant to bump; the version comes from the tag.
