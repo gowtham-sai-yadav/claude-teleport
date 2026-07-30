@@ -1,0 +1,65 @@
+name: Bug report
+description: Something behaved differently than it said it would
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: The command you ran
+      description: >
+        Paste the command and its output. Redact anything private — paths are usually
+        fine and often the useful part, but check before pasting.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `entangle version`.
+      placeholder: entangle 0.7.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: If a transfer or an import is involved, say both ends.
+      multiple: true
+      options:
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tool
+    attributes:
+      label: Which coding tool's session
+      multiple: true
+      options:
+        - Claude Code
+        - OpenAI Codex
+        - opencode
+        - Not specific to one
+    validations:
+      required: true
+
+  - type: textarea
+    id: anything
+    attributes:
+      label: Anything else
+      description: >
+        Optional. If a file landed in the wrong place, `entangle inspect <bundle>` and
+        a `--dry-run` of the import are the two most useful things to include.
