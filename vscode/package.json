@@ -1,7 +1,7 @@
 {
   "name": "entangle",
   "displayName": "entangle",
-  "description": "Hand a Claude Code session to a teammate over an encrypted code, or share it to a file — without leaving VS Code.",
+  "description": "Hand a live coding session to a teammate over an encrypted code, or share it to a file — Claude Code, Codex, or opencode, without leaving VS Code.",
   "version": "0.1.0",
   "publisher": "gowtham-sai-yadav",
   "license": "MIT",
@@ -12,17 +12,19 @@
     "Other"
   ],
   "keywords": [
-    "claude",
     "claude code",
+    "codex",
+    "opencode",
     "session",
     "share",
+    "claude",
     "ai"
   ],
   "repository": {
     "type": "git",
     "url": "https://github.com/gowtham-sai-yadav/entangle"
   },
-  "homepage": "https://gowthamsai.in/teleport/",
+  "homepage": "https://gowthamsai.in/entangle/",
   "bugs": {
     "url": "https://github.com/gowtham-sai-yadav/entangle/issues"
   },
@@ -35,8 +37,8 @@
       "activitybar": [
         {
           "id": "entangle",
-          "title": "Teleport",
-          "icon": "media/teleport.svg"
+          "title": "entangle",
+          "icon": "media/entangle.svg"
         }
       ]
     },
@@ -45,65 +47,65 @@
         {
           "id": "entangle.sessions",
           "name": "Sessions",
-          "icon": "media/teleport.svg"
+          "icon": "media/entangle.svg"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "entangle.sessions",
-        "contents": "No Claude Code sessions to show.\n[Refresh](command:entangle.refresh)\n[Receive a session](command:entangle.receive)\n\nThe entangle CLI does the work — make sure it is installed.\n[Install entangle](https://gowthamsai.in/teleport/#install)"
+        "contents": "No coding sessions to show.\n[Refresh](command:entangle.refresh)\n[Receive a session](command:entangle.receive)\n\nThe entangle CLI does the work — make sure it is installed.\n[Install entangle](https://gowthamsai.in/entangle/#install)"
       }
     ],
     "commands": [
       {
         "command": "entangle.send",
         "title": "Send a session by code",
-        "category": "Teleport"
+        "category": "entangle"
       },
       {
         "command": "entangle.receive",
         "title": "Receive a session",
-        "category": "Teleport",
+        "category": "entangle",
         "icon": "$(inbox)"
       },
       {
         "command": "entangle.share",
         "title": "Share a session to a file",
-        "category": "Teleport"
+        "category": "entangle"
       },
       {
         "command": "entangle.sessions",
         "title": "Browse sessions",
-        "category": "Teleport"
+        "category": "entangle"
       },
       {
         "command": "entangle.menu",
         "title": "Open menu",
-        "category": "Teleport"
+        "category": "entangle"
       },
       {
         "command": "entangle.refresh",
         "title": "Refresh sessions",
-        "category": "Teleport",
+        "category": "entangle",
         "icon": "$(refresh)"
       },
       {
         "command": "entangle.sendItem",
         "title": "Send by code",
-        "category": "Teleport",
+        "category": "entangle",
         "icon": "$(radio-tower)"
       },
       {
         "command": "entangle.shareItem",
         "title": "Share to a file",
-        "category": "Teleport",
+        "category": "entangle",
         "icon": "$(file)"
       },
       {
         "command": "entangle.copyItemId",
         "title": "Copy session id",
-        "category": "Teleport"
+        "category": "entangle"
       }
     ],
     "menus": {

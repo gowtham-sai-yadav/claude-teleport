@@ -231,7 +231,7 @@ export ENTANGLE_NO_UPDATE_CHECK=1
 
 ## What moves, and what doesn't
 
-**Moves:** your sessions, project memory, settings, prompt history, and the portable parts of `~/.claude.json`, all re-pathed for the new machine.
+**Moves:** your Claude Code sessions, project memory, settings, prompt history, and the portable parts of `~/.claude.json`, all re-pathed for the new machine. Codex and opencode sessions move one at a time with `entangle share`.
 
 **Never moves:** your login. Credentials are machine-locked and deliberately left out.
 
