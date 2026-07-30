@@ -15,7 +15,7 @@ body:
     attributes:
       label: The command you ran
       description: >
-        Paste the command and its output. Redact anything private — paths are usually
+        Paste the command and its output. Redact anything private. Paths are usually
         fine and often the useful part, but check before pasting.
       render: shell
     validations:

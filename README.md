@@ -141,7 +141,7 @@ Run these from inside your copy of the project
 Windows PowerShell: irm https://gowthamsai.in/install.ps1 | iex
 ```
 
-Received sessions attach to the directory they are run in, and every file path in the conversation is rewritten to match. That is why it says to run it from inside their copy of the project — from the wrong folder it still imports, but the paths in it point at files that are not there.
+Received sessions attach to the directory they are run in, and every file path in the conversation is rewritten to match. That is why it says to run it from inside their copy of the project. From the wrong folder it still imports, but the paths in it point at files that are not there.
 
 <p align="center">
   <img src="docs/tui-send.png" alt="the hand-off preview: session, project, message count, and confirmation that secrets are scrubbed before it streams over an encrypted connection" width="720">
@@ -204,7 +204,7 @@ Prefer to stay in VS Code? The [entangle extension](vscode/) adds the same actio
 entangle update
 ```
 
-checks for a newer release and swaps the binary in place. **If you installed with Homebrew, run `brew upgrade entangle` instead** — replacing the file inside a keg works, but leaves brew still believing the old version is installed, and a later `brew upgrade` can then put an older build back over the top. `entangle` warns you before doing this.
+checks for a newer release and swaps the binary in place. **If you installed with Homebrew, run `brew upgrade entangle` instead.** Replacing the file inside a keg works, but leaves brew still believing the old version is installed, and a later `brew upgrade` can then put an older build back over the top. `entangle` warns you before doing this.
 
 You will also be told when a release exists, so a stale copy is a choice rather than an accident:
 
@@ -216,11 +216,11 @@ The cockpit shows the same thing in its header. The rules behind it:
 
 - **It never makes you wait.** The check runs *after* your command has finished and only writes down what it found; the note appears the next time you run something. Your session list is never behind a network round trip.
 - **It asks at most once a day**, and stays quiet for a day after a failure too, so an offline machine does not retry on every command.
-- **It never writes to stdout** — the note goes to stderr, and only when a terminal is attached. `entangle sessions --json` stays machine-readable, and scripts and CI never see it.
+- **It never writes to stdout.** The note goes to stderr, and only when a terminal is attached. `entangle sessions --json` stays machine-readable, and scripts and CI never see it.
 - **It says nothing when it fails.** No network errors you did not ask for.
 - **It is off for builds from source** (`dev` versions), which would otherwise be told forever that they are behind.
 
-This is the one thing entangle asks the network about on its own: an anonymous, unauthenticated `GET api.github.com/repos/.../releases/latest`. No account, no identifier, and nothing about your sessions. To turn it off entirely — the message *and* the request:
+This is the one thing entangle asks the network about on its own: an anonymous, unauthenticated `GET api.github.com/repos/.../releases/latest`. No account, no identifier, and nothing about your sessions. To turn off both the message and the request:
 
 ```bash
 export ENTANGLE_NO_UPDATE_CHECK=1
