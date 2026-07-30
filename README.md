@@ -196,7 +196,9 @@ claude --resume
 
 ## In your editor
 
-Prefer to stay in VS Code? The [entangle extension](vscode/) adds the same actions to the Command Palette, a status-bar button, and a sidebar: send a session by code, receive one, share to a file, or browse your sessions. It drives the CLI under the hood and offers to install it for you on first use, so the extension is all you need.
+Prefer to stay in VS Code? The [entangle extension](vscode/) adds the same actions to the Command Palette, a status-bar button, and a sidebar: send a session by code, receive one, share to a file, or browse your sessions. It drives the CLI under the hood and offers to install it for you on first use.
+
+It is not on the VS Code marketplace yet ([#41](https://github.com/gowtham-sai-yadav/entangle/issues/41)). Until it is, run it from this repo: open `vscode/` in VS Code and press <kbd>F5</kbd>. The CLI above is the supported way in.
 
 ## Updating
 
