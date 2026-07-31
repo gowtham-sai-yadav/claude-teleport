@@ -29,7 +29,7 @@ Set Theme "TokyoNight"
 Set PlaybackSpeed 0.9
 
 Hide
-Type "mkdir -p /tmp/entangle-demo-bin && go build -ldflags '-X github.com/gowtham-sai-yadav/entangle/internal/cli.version=0.6.0' -o /tmp/entangle-demo-bin/entangle . && DEMO_CODEX_HOME=/tmp/entangle-demo-codex DEMO_OPENCODE_DB=/tmp/entangle-demo-oc.db bash docs/demo-seed.sh /tmp/entangle-demo-home && clear"
+Type "mkdir -p /tmp/entangle-demo-bin && go build -ldflags=-X=github.com/gowtham-sai-yadav/entangle/internal/cli.version=$(git describe --tags --abbrev=0 | sed 's/^v//') -o /tmp/entangle-demo-bin/entangle . && DEMO_CODEX_HOME=/tmp/entangle-demo-codex DEMO_OPENCODE_DB=/tmp/entangle-demo-oc.db bash docs/demo-seed.sh /tmp/entangle-demo-home && clear"
 Enter
 Sleep 6s
 Type "export PATH=/tmp/entangle-demo-bin:$PATH CLAUDE_CONFIG_DIR=/tmp/entangle-demo-home CODEX_HOME=/tmp/entangle-demo-codex OPENCODE_DB=/tmp/entangle-demo-oc.db ENTANGLE_NO_UPDATE_CHECK=1 && clear"

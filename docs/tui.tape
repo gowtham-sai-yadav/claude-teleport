@@ -13,6 +13,11 @@
 # All three tools have to be isolated, each by a different mechanism -
 # CLAUDE_CONFIG_DIR, CODEX_HOME, OPENCODE_DB - and all three have to be seeded, or
 # a still that is supposed to show every agent on the machine quietly shows two.
+#
+# The version in the banner comes from the latest git tag rather than a literal.
+# It used to be hardcoded, which meant the README kept showing v0.6.0 several
+# releases after that stopped being true. Re-record after tagging, not before,
+# or the stills will name the previous release.
 
 Output "/tmp/entangle-tui-stills-scratch.gif"
 
@@ -25,7 +30,7 @@ Set Theme "TokyoNight"
 
 # --- hidden setup: build the binary and seed a clean demo history ---
 Hide
-Type "go build -ldflags '-X github.com/gowtham-sai-yadav/entangle/internal/cli.version=0.6.0' -o /tmp/entangle-demo . && DEMO_CODEX_HOME=/tmp/entangle-demo-codex DEMO_OPENCODE_DB=/tmp/entangle-demo-oc.db bash docs/demo-seed.sh /tmp/entangle-demo-home && clear"
+Type "go build -ldflags=-X=github.com/gowtham-sai-yadav/entangle/internal/cli.version=$(git describe --tags --abbrev=0 | sed 's/^v//') -o /tmp/entangle-demo . && DEMO_CODEX_HOME=/tmp/entangle-demo-codex DEMO_OPENCODE_DB=/tmp/entangle-demo-oc.db bash docs/demo-seed.sh /tmp/entangle-demo-home && clear"
 Enter
 Sleep 5s
 Show
