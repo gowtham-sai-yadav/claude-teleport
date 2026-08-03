@@ -185,7 +185,7 @@ func addTree(w *bundle.Writer, srcDir, prefix string) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
+		if !d.Type().IsRegular() {
 			return nil
 		}
 		rel, err := filepath.Rel(srcDir, path)
