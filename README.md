@@ -143,6 +143,26 @@ Windows PowerShell: irm https://gowthamsai.in/install.ps1 | iex
 
 Received sessions attach to the directory they are run in, and every file path in the conversation is rewritten to match. That is why it says to run it from inside their copy of the project. From the wrong folder it still imports, but the paths in it point at files that are not there.
 
+This is what they see. It shows the rewrite it is about to do before it does it, then confirms the session can actually be resumed rather than leaving you to find out:
+
+```text
+Path remapping:
+  /Users/alex/work/dashboard  ->  /Users/sam/projects/dashboard
+  /Users/sam  ->  /Users/sam
+  /Users/alex  ->  /Users/sam
+
+Projects:
+     OLD                         NEW                            SESSIONS
+  +  /Users/alex/work/dashboard  /Users/sam/projects/dashboard  1
+
+Done. 1 file(s) written, 0 skipped (already present); 0 project entries merged into .claude.json.
+
+Verify: 1/1 migrated project(s) look resume-ready.
+
+IMPORTANT: your login was NOT transferred - credentials never are.
+Open Claude Code, log in once, then run `claude --resume` inside a project.
+```
+
 <p align="center">
   <img src="docs/tui-send.png" alt="the hand-off preview: session, project, message count, and confirmation that secrets are scrubbed before it streams over an encrypted connection" width="720">
 </p>
