@@ -15,6 +15,8 @@ Encrypted, no account, three spoken words.
 
 <img src="docs/demo.gif" alt="typing entangle opens the cockpit: Claude Code, Codex and opencode sessions interleaved in one list, filtered a tool at a time, then a hand-off preview and the three-word code a teammate reads back" width="820">
 
+<sub>If this saves you a hand-off, a star helps other people find it.</sub>
+
 </div>
 
 ---
